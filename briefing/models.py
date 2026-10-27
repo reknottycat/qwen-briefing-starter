@@ -106,7 +106,7 @@ class Edition(Draft):
 class Failure(StrictModel):
     date: date
     fingerprint: Fingerprint
-    code: Literal["timeout", "codex_failed", "invalid_output", "input_too_large", "publish_failed", "worker_interrupted"]
+    code: Literal["timeout", "codex_failed", "generation_failed", "invalid_output", "input_too_large", "publish_failed", "worker_interrupted"]
     rebuild_id: RebuildID | None = None
     lease_id: RebuildID | None = None
     preferences_revision: int | None = Field(default=None, ge=1, strict=True)

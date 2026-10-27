@@ -1,4 +1,4 @@
-"""Background worker: an authenticated Codex CLI produces a structured, dated draft.
+"""Background worker: a configured cloud transport produces a validated draft.
 
 Email data is passed through a read-only input file with a finite EOF, never
 interpolated into a shell or exposed in process arguments.
@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import ValidationError
 
+from .generators import AdapterFailure, run_pi
 from .models import MAX_SECTIONS, MAX_SECTION_CHARS, Draft, Edition, subject_task
 from .preferences import validate_preferences_snapshot
 from .source_policy import SOURCE_ORDER, SOURCE_RULES
@@ -233,7 +234,7 @@ def _run_codex_model(job: dict, binary: str, runtime: Path, timeout: int, max_se
             schema["required"].append("learning_summaries")
         (directory / "schema.json").write_text(json.dumps(schema, ensure_ascii=False), encoding="utf-8")
         (directory / "input.txt").write_text(prompt, encoding="utf-8")
-        environment = {key: value for key, value in os.environ.items() if not key.startswith("BRIEFING_")}
+        environment = {key: value for key, value in os.environ.items() if not key.startswith(("BRIEFING_", "PI_"))}
         environment["PATH"] = str(Path(binary).parent) + os.pathsep + environment.get("PATH", "")
         try:
             # A regular read-only file has EOF: unlike an inherited SSH stream,
@@ -272,6 +273,10 @@ def _run_codex_model(job: dict, binary: str, runtime: Path, timeout: int, max_se
 
 
 def run_codex(job: dict, binary: str, runtime: Path, timeout: int = 600) -> dict:
+    return _run_with_model(job, binary, runtime, timeout, _run_codex_model)
+
+
+def _run_with_model(job: dict, binary: str, runtime: Path, timeout: int, model_runner) -> dict:
     preferences = job_preferences(job)
     originals = raw_sections(job, preferences)
     summaries = raw_learning_summaries(job, preferences)
@@ -282,9 +287,43 @@ def run_codex(job: dict, binary: str, runtime: Path, timeout: int = 600) -> dict
     remaining = MAX_SECTIONS - len(originals)
     if remaining < 1:
         raise GenerationFailure("input_too_large")
-    generated = _run_codex_model({**job, "messages": messages}, binary, runtime, timeout, remaining)
+    generated = model_runner({**job, "messages": messages}, binary, runtime, timeout, remaining)
     return {**generated, "sections": generated["sections"] + originals,
             "learning_summaries": generated["learning_summaries"] + summaries}
+
+
+def _run_pi_model(job: dict, binary: str, runtime: Path, timeout: int, max_sections: int) -> dict:
+    schema = Draft.model_json_schema()
+    schema["properties"]["sections"]["maxItems"] = max_sections
+    if "learning_summaries" not in schema["required"]:
+        schema["required"].append("learning_summaries")
+    try:
+        return run_pi(build_prompt(job, max_sections=max_sections), schema,
+                      os.environ.get("PI_BIN") or "pi", runtime, timeout=timeout)
+    except AdapterFailure as error:
+        raise GenerationFailure(error.code) from None
+
+
+def run_generator(job: dict, binary: str, runtime: Path, timeout: int = 600) -> dict:
+    generator = os.environ.get("BRIEFING_GENERATOR", "codex")
+    if generator == "codex":
+        return run_codex(job, binary, runtime, timeout)
+    if generator == "pi":
+        return _run_with_model(job, binary, runtime, timeout, _run_pi_model)
+    raise GenerationFailure("generation_failed")
+
+
+def valid_backend_url(value: str, *, allow_internal: bool = False) -> bool:
+    try:
+        parsed = urlsplit(value)
+        if (not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment
+                or any(char.isspace() for char in value)):
+            return False
+        parsed.port
+        return parsed.scheme == "https" or (allow_internal and parsed.scheme == "http"
+            and parsed.hostname in {"api", "localhost", "127.0.0.1", "::1"})
+    except ValueError:
+        return False
 
 
 def validate_draft(job: dict, draft: dict) -> Edition:
@@ -361,7 +400,8 @@ def validate_draft(job: dict, draft: dict) -> Edition:
     return edition
 
 
-def run_once(client: httpx.Client, binary: str, runtime: Path, timeout: int = 600, generator=run_codex) -> str:
+def run_once(client: httpx.Client, binary: str, runtime: Path, timeout: int = 600, generator=None) -> str:
+    generator = generator or run_generator
     response = client.get("jobs/next")
     response.raise_for_status()
     job = response.json()
@@ -402,7 +442,7 @@ def run_once(client: httpx.Client, binary: str, runtime: Path, timeout: int = 60
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Prepare cached private briefings with an authenticated Codex CLI")
+    parser = argparse.ArgumentParser(description="Prepare cached private briefings with the configured cloud generator")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--interval", type=int, default=120)
     parser.add_argument("--timeout", type=int, default=600)
@@ -410,10 +450,11 @@ def main(argv=None) -> int:
     if not 10 <= args.interval <= 3600 or not 30 <= args.timeout <= 840:
         parser.error("interval must be 10..3600 seconds and timeout 30..840 seconds")
     base_url = os.environ.get("BRIEFING_BASE_URL", "").rstrip("/") + "/"
-    parsed = urlsplit(base_url)
     token = os.environ.get("BRIEFING_WORKER_TOKEN", "")
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or len(token) < 24:
-        parser.error("a valid HTTPS BRIEFING_BASE_URL and BRIEFING_WORKER_TOKEN are required")
+    if not valid_backend_url(base_url, allow_internal=os.environ.get("BRIEFING_ALLOW_HTTP_INTERNAL") == "1") or len(token) < 24:
+        parser.error("a valid BRIEFING_BASE_URL and BRIEFING_WORKER_TOKEN are required; HTTP is restricted to explicitly enabled internal targets")
+    if os.environ.get("BRIEFING_GENERATOR", "codex") not in {"codex", "pi"}:
+        parser.error("BRIEFING_GENERATOR must be codex or pi")
     binary = os.environ.get("CODEX_BIN") or "codex"
     runtime = Path(os.environ.get("BRIEFING_WORKER_RUNTIME", "runtime/worker"))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
