@@ -5,6 +5,8 @@ import importlib.metadata
 import json
 from pathlib import Path
 import secrets
+import subprocess
+import sys
 import tempfile
 
 import briefing
@@ -21,6 +23,10 @@ def main() -> None:
     version = importlib.metadata.version("qwen-briefing-starter")
     tokens = {role: secrets.token_urlsafe(32) for role in ("read", "ingest", "worker", "manage")}
     checks = []
+    setup = subprocess.run([sys.executable, "-I", "-m", "briefing.onboarding", "--help"],
+                           capture_output=True, text=True, timeout=10)
+    assert setup.returncode == 0 and "confirm-tasks" in setup.stdout and "confirm-server" in setup.stdout
+    checks.append("installed_setup_cli_available")
     with tempfile.TemporaryDirectory(prefix="briefing-install-") as directory:
         with TestClient(create_app(Path(directory), tokens), base_url="https://testserver") as client:
             assert client.get(PREFIX + "/health").json()["status"] == "ok"

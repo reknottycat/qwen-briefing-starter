@@ -4,10 +4,11 @@
 
 ## 维护源与现有入口
 
-- `briefing/source_policy.json` 维护来源名称、`kind`、`event_type`、顺序及声明的 `narration_detail` 初值。云端通过 `preferences.default_preferences()` 构造实际初值，初始学习来源默认详细；以该函数核对初始化，而非假定 JSON 中每项都直接成为有效值。JSON 不是已经运行的详略、模式和备注的事实来源。
+- 先查实际 API/worker 配置中的 `BRIEFING_SOURCE_POLICY_PATH`，其私有策略维护名称、`kind`、`event_type`、顺序及声明的详略初值；未配置时才用包内 `briefing/source_policy.json` 示例。API、worker 与 Apps Script 必须加载同一份策略。不要因仓库示例易找到就改它并声称线上来源已变更。
+- `BRIEFING_INITIAL_PREFERENCES_PATH` 只给没有有效偏好的新状态提供初值；未设置时才用默认构造函数。它不覆盖现有偏好，也不能迁移来源集合。运行中的模式、分类、详略、备注和工作开关以管理 API 回读为准。
 - 云端 `state.preferences` 保存有效设置；`briefing/preferences.py` 定义校验、初始分类、默认值和快照，`briefing/api.py` 定义管理认证和接口，`briefing/store.py` 管理版本与当日生成任务。以实际代码核对部署支持，旧文档不能覆盖新接口契约。`category` 不写入来源 JSON，`work_enabled` 初始为 false。
-- `briefing/worker.py` 使用领取任务附带的 preferences 快照。每来源包含 `mode`、`category`、`narration_detail`、`note`；顶层有 `work_enabled`，初始 mode 为 `processed`，快照 `format` 为 `mixed`。`raw` 不用模型整理，`processed` 按详略和偏好整理，`podcast` 为备用双人文案；不生成音频。
-- `cloud-gmail/Code.gs` 仍用 `BRIEFING_SOURCE_POLICY` 收取入选来源的完整邮件，保持原触发器。普通偏好修改不改收件器、不改上游 ChatGPT 任务、不重启服务。
+- `briefing/worker.py` 使用领取任务附带的 preferences 快照。每来源包含 `mode`、`category`、`narration_detail`、`note`；顶层有 `work_enabled`，快照 `format` 为 `mixed`。新实例初值来自已确认的私有文件，缺少时才回退到默认 `processed`。`raw` 不用模型整理，`processed` 按详略和偏好整理，`podcast` 为备用双人文案；不生成音频。
+- `cloud-gmail/Code.gs` 仍用 `BRIEFING_SOURCE_POLICY` 收取入选来源的完整邮件，保持原触发器。普通偏好修改不改收件器、不改上游原任务、不重启服务。
 
 ## 管理已有来源的模式、详略与备注
 
@@ -27,15 +28,15 @@ work 关闭时即时禁取工作入口，其他视图包括 full 也必须排除
 
 ## 新增、移除来源或调整顺序
 
-此类变更仍更新 `briefing/source_policy.json`，按项目原有策略同步流程协调云 API、DGX 和 Apps Script；不能用偏好 PUT 改来源集合或排序。
+此类变更更新实际生效的私有策略，协调 API、worker 和 Apps Script；不能用偏好 PUT 改来源集合或排序。无私有策略的旧实例才检查包内回退配置。当前首次初始化不是状态迁移，已经保存数据时必须先停写、备份、设计并验证迁移，不能直接替换名单或重建空状态。
 
 - 停服务前回读实际策略和有效 preferences，将候选部署全部差异对照本次及已有授权。保留无关本地修改但隔离本次部署版本，不随完整 JSON 夹带上线，也不拿初始默认值覆盖用户已保存的有效设置。
 - 核对 `briefing/preferences.py` 和 Store 的现有迁移行为：保留仍在名单内来源的模式、分类、详略、备注和顶层工作开关；新增项按 `default_preferences()` 统一初始化，再通过管理 API 落实用户指定的分类与偏好；移除项不再进入有效快照。来源变更后回读完整名称集合、顺序、有效字段和版本。若当前版本没有兼容迁移能力，先补齐并在隔离状态验证，不能直接部署导致快照校验失败的名单。
 - 沿用现有 OpenSpec、项目环境及测试：`python -m pytest -q`、`node --test tests/test_collector.cjs`；根据改动运行管理页面或 API 相关检查。仅改技能文字时运行 skill-creator 校验器，不将它当作服务验收。
-- 按 operations 先停 DGX worker，再停 API 并受控备份；同步同一已核验来源策略及必要代码，Apps Script 保存同份 `BRIEFING_SOURCE_POLICY`。保留凭据、Codex 登录和已有触发器。启动 API 后检查管理读取、鉴权和现有稿件，再恢复 worker。勿打印全部 Script Properties。
+- 按 operations 先停 worker，再停 API 并受控备份；同步同一已核验来源策略及必要代码，Apps Script 保存同份 `BRIEFING_SOURCE_POLICY`。保留凭据、既有 Codex/Pi 配置和已有触发器。启动 API 后检查管理读取、鉴权和现有稿件，再恢复 worker。勿打印全部 Script Properties。
 - 顺序及来源结构变化不应假定已有稿件自动更新。核对实际排队行为，按本次授权处理受影响的当前或指定日期，避免重复排队和批量重算历史；最终检查新稿来源、顺序和 preferences 版本。
 
-移除来源保留原 ChatGPT 任务和 Gmail，只撤下本项早报交付附加规则。普通移除请求还应让活动读取不再返回该来源；用户明确只暂停今后收录时遵守其范围。当前没有以 preferences PUT 删除来源或清理历史缓存的能力，不能仅删策略后宣称完成。
+移除来源保留原任务和 Gmail，只撤下本项早报交付附加规则。普通移除请求还应让活动读取不再返回该来源；用户明确只暂停今后收录时遵守其范围。当前没有以 preferences PUT 删除来源或清理历史缓存的能力，不能仅删策略后宣称完成。
 
 有相关活动记录时，先核对项目已有迁移工具是否适用；不要套用其他来源的写死撤下脚本。按停机备份流程，在副本中精确核对目标任务名/邮件 ID、日期及计数，隔离目标活动邮件、撤下或替换关联缓存，处理对应生成任务/租约和有效 preferences，保留其他来源及恢复备份。有合法输入的受影响日期可重建；没有输入的日期应返回 `missing`。API 状态常驻内存，禁止在线手改 `state.json`；不能安全识别记录时只暂停对应迁移，不扩大删除范围。
 

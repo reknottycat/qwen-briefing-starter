@@ -39,19 +39,17 @@ worker 会去掉开头的事件行、紧随其后的合法分类行及其后一�
 
 kind 不会自动创建计划任务，也不会保证每天或每周有邮件。条件来源没有新事件时无需发送“暂无变化”邮件；本项目不替你监控上游网站、生成原始报告或发送邮件。
 
-[示例策略](../briefing/source_policy.json) 包含十个中性来源。采集器搜索最近七天、标题含“[每日早报]”的 Gmail 邮件，逐封再校验来源白名单。每次最多成功提交 40 封，分页扫描最多十页。收件时间用于记录，分期日期由标题确定。
+[示例策略](../briefing/source_policy.json) 包含十个中性来源；真实部署可由 BRIEFING_SOURCE_POLICY_PATH 加载私有策略。首次安装只接入已确认的每日非监控任务，weekly/conditional 保留为现有接口能力，不会被首次配置助手自动选入。采集器搜索最近七天、标题含“[每日早报]”的 Gmail 邮件，逐封再校验来源白名单。每次最多成功提交 40 封，分页扫描最多十页。收件时间用于记录，分期日期由标题确定。
 
 采集器优先取 text/plain，只有没有纯文本正文时才转换 text/html；命名附件不属于输入契约。MIME 正文以附件形式存储时会读取正文附件，不能以摘要或邮件片段替代完整正文。采集器和手工导入按 UTF-16 code units 将单封正文限制在 80,000；API 按 Unicode 字符校验同一数值上限。含非 BMP 字符的邮件经过采集器或导入脚本时，采用前者更严格的计数边界。
 
 ## 定制来源
 
-新安装尚无数据时：
+新安装先按 [首次安装](setup.md) 发现真实任务、确认朗读方案和服务器，再导出 runtime/config/source-policy.json 与 initial-preferences.json，不需要修改包内示例名称。
 
-1. 编辑 [source_policy.json](../briefing/source_policy.json)。每条保留 name、kind、event_type、narration_detail 四个字段；version 保持 1。数组顺序就是朗读来源顺序。
-2. name 必须唯一，长度 1–80，首尾无空白，不能含方括号或换行。详略只支持 simple、standard、detailed。
-3. API 与 worker 使用同一份策略文件；将相同 JSON 复制到 Apps Script 的 BRIEFING_SOURCE_POLICY 属性。
-4. 如果新增来源需要默认归为学习类别，同步调整 [preferences.py](../briefing/preferences.py) 的初始学习来源集合，或首次启动后在设置页明确分类。
-5. 用合成邮件验证允许与拒绝两类路径，再接入自己的报告来源。
+策略每条保留 name、kind、event_type、narration_detail 四个字段；version 为 1，数组顺序就是朗读来源顺序。name 必须唯一，长度 1–80，首尾无空白，不能含方括号或换行。详略支持 simple、standard、detailed。首次配置沿用任务名称，名称不符合契约时需在原任务与来源映射中明确处理，不能悄悄改名。
+
+API 与 worker 的 BRIEFING_SOURCE_POLICY_PATH 指向内容相同的私有策略，各主机实际路径可以不同；Gmail 的 BRIEFING_SOURCE_POLICY 属性使用相同 JSON。BRIEFING_INITIAL_PREFERENCES_PATH 只初始化新状态中的分类、模式、详略和工作开关。未指定私有路径时才回退到包内示例与默认偏好。启动后通过设置页管理有效偏好，并用隔离合成邮件验证允许与拒绝路径，再接入真实报告。
 
 已有部署的来源名称同时关联历史邮件、偏好、缓存和任务。**当前仓库没有自动来源迁移工具**。不要在运行中手改 state.json，也不要只改采集器或只替换一端策略。需要先停服务并备份，在副本中完成有映射规则的迁移与验证，再让 API、worker、采集器使用同一版本。若只是想改变详略、分类或短偏好，直接使用设置页，不需要修改策略文件。操作步骤见 [运行维护](operations.md)。
 

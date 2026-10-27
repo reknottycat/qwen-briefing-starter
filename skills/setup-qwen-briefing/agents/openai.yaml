@@ -1,0 +1,4 @@
+interface:
+  display_name: "安装千问早报"
+  short_description: "先确认已有每日任务与朗读设置，再配置服务器和千问设备的完整接入流程"
+  default_prompt: "使用 $setup-qwen-briefing 先检查我现有的每日非监控任务，向我确认选择后再配置服务器，并最终接入我的千问眼镜。"

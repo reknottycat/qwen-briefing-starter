@@ -2,9 +2,9 @@
 
 把邮件中的资讯、学习材料和工作更新，变成千问可以直接朗读的个人简报。
 
-A self-hosted starter for cached briefings: Gmail → FastAPI → Codex worker → Qwen HTTP tool and Speak.
+A self-hosted starter for cached briefings: existing daily tasks → Gmail → Codex or Pi → Qwen HTTP tool and Speak.
 
-这个项目先收集邮件、提前准备稿件，再让千问读取缓存。语音请求不临时访问 Gmail，也不等待模型生成。生成端可以运行在一台常开的 Linux 主机上，**不需要 DGX、GPU 或常开 Windows 电脑**。
+这个项目复用你已有的每日报告任务，先收集邮件、提前准备稿件，再让千问读取缓存。服务器通过 Codex 或轻量的 Pi 调用云端模型，**不需要 DGX、GPU 或常开 Windows 电脑**。眼镜发起请求时只读缓存，不等待模型生成。
 
 - 设置页可为每个来源选择原文或整理稿，并设置详略和短偏好；API 另保留备用播客对话模式。
 - “今日简报”包含新闻与学习概要；“今天应该学什么”读取完整学习内容。
@@ -13,17 +13,22 @@ A self-hosted starter for cached briefings: Gmail → FastAPI → Codex worker �
 
 ## 开始使用
 
-先安装 Python 3.11+ 和 Node.js 22.20+，然后在仓库目录运行：
+让 Codex 或 OpenCode 使用首次配置 Skill：
 
 ~~~bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-dev.txt
-python -m pytest
-node --test tests/test_collector.cjs
+npx skills add reknottycat/qwen-briefing-starter --skill setup-qwen-briefing -a codex
 ~~~
 
-这些检查使用合成数据。接入自己的邮箱、HTTPS 服务与千问工具，请按 [快速开始](docs/quickstart.md) 操作。仓库附带的十个来源是示例，不会创建邮件订阅或自动生产这些内容。
+OpenCode 与 Codex 共用同一份标准 SKILL.md；[安装说明](docs/setup.md) 提供共同的 .agents/skills 放置方式。OpenCode 作为配置助手使用，不是服务器生成后端。
+
+配置助手会按顺序完成：
+
+1. 找到你已有、启用的每日非监控任务，提出新闻/学习/工作分类和朗读方案，等你确认。
+2. 再确认服务器、Docker 或 Linux 部署，以及 Codex 或 Pi 生成方式；密钥由你在本地配置。
+3. 导出私有来源配置，部署并核对 Gmail、生成任务和缓存接口。
+4. 最后在你登录的千问开发者平台配置 HTTP 工具，绑定自己的眼镜并验证完整朗读。
+
+完整自助步骤见 [首次安装](docs/setup.md)。Skill 不会把不存在的任务补建出来；仓库十个来源仅作示例。安装 Skill 本身也不会创建服务器、完成登录或通过设备验收。已有部署继续用下面的管理 Skill，不必重走安装。
 
 已有后端时，可安装 Codex 管理 Skill：
 
@@ -39,7 +44,8 @@ npx skills add reknottycat/qwen-briefing-starter --skill add-to-briefing -a code
 
 | 文档 | 内容 |
 | --- | --- |
-| [快速开始](docs/quickstart.md) | 本地检查、运行 API、接入 Gmail、worker 和千问 |
+| [首次安装](docs/setup.md) | 任务发现、两步确认、私有配置、Docker 与千问接入 |
+| [手动运行与开发](docs/quickstart.md) | 本地检查及已有 Codex/Linux 环境的手动运行 |
 | [邮件格式与来源策略](docs/mail-format.md) | 标题、事件类型、正文，以及如何定制来源 |
 | [架构与接口](docs/architecture.md) | 数据流、权限、朗读模式和四个读取视图 |
 | [运行维护](docs/operations.md) | 设置、重建、状态、备份与凭据轮换 |

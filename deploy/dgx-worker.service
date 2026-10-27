@@ -1,5 +1,5 @@
 [Unit]
-Description=Private daily briefing Codex worker
+Description=Private daily briefing generation worker
 After=network-online.target
 Wants=network-online.target
 

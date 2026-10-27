@@ -1,0 +1,70 @@
+services:
+  api:
+    image: ${BRIEFING_IMAGE:-qwen-briefing-starter:local}
+    build: .
+    user: "${BRIEFING_UID:-1000}:${BRIEFING_GID:-1000}"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${BRIEFING_PORT:-8787}:8787"
+    environment:
+      BRIEFING_DATA_DIR: /var/lib/briefing
+      BRIEFING_SOURCE_POLICY_PATH: /run/briefing/config/source-policy.json
+      BRIEFING_INITIAL_PREFERENCES_PATH: /run/briefing/config/initial-preferences.json
+      BRIEFING_INGEST_TOKEN_FILE: /run/secrets/ingest_token
+      BRIEFING_WORKER_TOKEN_FILE: /run/secrets/worker_token
+      BRIEFING_READ_TOKEN_FILE: /run/secrets/read_token
+      BRIEFING_MANAGE_TOKEN_FILE: /run/secrets/manage_token
+      BRIEFING_TRUSTED_PROXY_IPS: ${BRIEFING_TRUSTED_PROXY_IPS:-127.0.0.1}
+    volumes:
+      - ${BRIEFING_CONFIG_DIR:-./runtime/config}:/run/briefing/config:ro
+      - ${BRIEFING_DATA_DIR:-./runtime/docker/data}:/var/lib/briefing
+    secrets: [ingest_token, worker_token, read_token, manage_token]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8787/briefing/v1/health', timeout=2).status == 200"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  worker:
+    image: ${BRIEFING_IMAGE:-qwen-briefing-starter:local}
+    build: .
+    user: "${BRIEFING_UID:-1000}:${BRIEFING_GID:-1000}"
+    command: ["python", "-m", "briefing.worker", "--interval", "120"]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      BRIEFING_GENERATOR: pi
+      BRIEFING_BASE_URL: http://api:8787/briefing/v1
+      BRIEFING_ALLOW_HTTP_INTERNAL: "1"
+      BRIEFING_WORKER_TOKEN_FILE: /run/secrets/worker_token
+      BRIEFING_WORKER_RUNTIME: /var/lib/briefing-worker
+      BRIEFING_SOURCE_POLICY_PATH: /run/briefing/config/source-policy.json
+      PI_PROVIDER: ${PI_PROVIDER:?Set the cloud model provider in .env}
+      PI_MODEL: ${PI_MODEL:?Set the cloud model name in .env}
+      PI_BASE_URL: ${PI_BASE_URL:-}
+      PI_API_KEY_FILE: /run/secrets/llm_api_key
+    volumes:
+      - ${BRIEFING_CONFIG_DIR:-./runtime/config}:/run/briefing/config:ro
+      - ${BRIEFING_WORKER_DIR:-./runtime/docker/worker}:/var/lib/briefing-worker
+    secrets: [worker_token, llm_api_key]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+secrets:
+  ingest_token:
+    file: ${BRIEFING_CREDENTIALS_DIR:-./runtime/credentials}/ingest.token
+  worker_token:
+    file: ${BRIEFING_CREDENTIALS_DIR:-./runtime/credentials}/worker.token
+  read_token:
+    file: ${BRIEFING_CREDENTIALS_DIR:-./runtime/credentials}/read.token
+  manage_token:
+    file: ${BRIEFING_CREDENTIALS_DIR:-./runtime/credentials}/manage.token
+  llm_api_key:
+    file: ${BRIEFING_CREDENTIALS_DIR:-./runtime/credentials}/llm-api-key

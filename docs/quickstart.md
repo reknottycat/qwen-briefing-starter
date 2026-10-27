@@ -1,6 +1,6 @@
-# 快速开始
+# 手动运行与本地开发
 
-先在本地检查程序，再连接自己的服务。以下命令以 Linux Bash 为例；Python API 与测试不依赖 Windows。常开 worker 推荐使用 Linux，长期运行可采用 [systemd 模板](../deploy/)。
+首次安装请先按 [安装流程](setup.md) 发现并确认已有任务，再选择服务器和生成方式。本文是本地开发及已有 Codex/Linux 环境的手动运行参考；新建 Docker 实例使用 [容器说明](../deploy/docker/README.md)。以下命令以 Linux Bash 为例，Python API 与测试不依赖 Windows。
 
 ## 1. 准备环境并运行测试
 
@@ -21,17 +21,19 @@ python -m pytest
 node --test tests/test_collector.cjs
 ~~~
 
-测试使用合成数据，不需要读取自己的邮箱或调用模型。仓库中的来源是示例，首次试用可先保留。要更换来源，先读 [邮件格式与来源策略](mail-format.md)，再启动有真实数据的服务。
+测试使用合成数据，不需要读取自己的邮箱或调用模型。仓库来源只用于示例。真实部署使用首次安装流程导出的私有策略与初始偏好，不必编辑源码里的示例名称；接口约定见 [邮件格式与来源策略](mail-format.md)。
 
 ## 2. 生成本地凭据
 
 下面的域名是占位符，替换为自己的 HTTPS 地址。API 固定前缀是 /briefing/v1。
 
 ~~~bash
-python deploy/create-runtime-config.py --base-url https://briefing.example.com/briefing/v1 --codex-bin codex
+python deploy/create-runtime-config.py --base-url https://briefing.example.com/briefing/v1 --generator codex --codex-bin codex --source-policy runtime/config/source-policy.json --initial-preferences runtime/config/initial-preferences.json
 ~~~
 
 生成器默认把文件放到仓库的 runtime/credentials/：
+
+这条命令使用首次配置导出的两份文件，并把对应绝对路径写进 API/worker 的环境配置。此处路径适合当前用户的本地试运行；安装 systemd 时必须按 [运行维护](operations.md) 把 API 配置复制到 /etc 下，调整 API/worker 各自可读取的绝对路径。ProtectHome=true 的 API 不能读取普通用户主目录中的导出。不能漏掉这两个参数后将示例默认来源当作已确认来源。
 
 | 文件 | 用途 |
 | --- | --- |
@@ -52,6 +54,8 @@ python deploy/create-runtime-config.py --base-url https://briefing.example.com/b
 
 ~~~bash
 export BRIEFING_DATA_DIR="$PWD/runtime/cloud"
+export BRIEFING_SOURCE_POLICY_PATH="$PWD/runtime/config/source-policy.json"
+export BRIEFING_INITIAL_PREFERENCES_PATH="$PWD/runtime/config/initial-preferences.json"
 export BRIEFING_INGEST_TOKEN="$(cat runtime/credentials/ingest.token)"
 export BRIEFING_WORKER_TOKEN="$(cat runtime/credentials/worker.token)"
 export BRIEFING_READ_TOKEN="$(cat runtime/credentials/read.token)"
@@ -65,7 +69,7 @@ python -m uvicorn briefing.api:create_app --factory --host 127.0.0.1 --port 8786
 curl --fail http://127.0.0.1:8786/briefing/v1/health
 ~~~
 
-应得到 status 为 ok。用浏览器打开 http://127.0.0.1:8786/briefing/v1/manage/，输入 manage.token 的内容，即可查看示例来源。初始没有邮件时显示“暂无来源”属于正常空状态，不表示已经生成简报。
+上面的两个配置路径来自首次安装导出；它们需要先存在。纯开发环境若明确使用仓库示例，可不设置这两个变量。健康请求应得到 status 为 ok。用浏览器打开 http://127.0.0.1:8786/briefing/v1/manage/，输入 manage.token 的内容，即可查看实际加载的来源。初始没有邮件时显示“暂无来源”属于正常空状态，不表示已经生成简报。
 
 API 必须保持一个进程、一个 worker。本地 HTTP 只适合回环调试。Gmail 采集器和生成 worker 要求 HTTPS；下一步需配置自己的 TLS 入口。
 
@@ -84,7 +88,7 @@ API 必须保持一个进程、一个 worker。本地 HTTP 只适合回环调试
 | EXPECTED_ACCOUNT | 实际 Gmail 账号，例如 owner@example.com |
 | BRIEFING_BASE_URL | https://briefing.example.com/briefing/v1 |
 | BRIEFING_INGEST_TOKEN | ingest.token 的完整内容 |
-| BRIEFING_SOURCE_POLICY | 与 API、worker 相同的 source_policy.json 完整 JSON |
+| BRIEFING_SOURCE_POLICY | 与 API、worker 相同的私有 source-policy.json 完整 JSON |
 
 采集器先核对 Gmail profile 与 EXPECTED_ACCOUNT，再读取匹配邮件。先放入一封 [符合格式的合成邮件](mail-format.md)，手动执行 collectBriefings 并查看 collectorStatus。ingested 增加、失败数为零后，执行 installCollector 安装十五分钟触发器；这个函数也会立即执行一次采集。
 
@@ -98,6 +102,8 @@ API 必须保持一个进程、一个 worker。本地 HTTP 只适合回环调试
 
 ~~~bash
 export BRIEFING_BASE_URL="https://briefing.example.com/briefing/v1"
+export BRIEFING_GENERATOR=codex
+export BRIEFING_SOURCE_POLICY_PATH="$PWD/runtime/config/source-policy.json"
 export BRIEFING_WORKER_TOKEN="$(cat runtime/credentials/worker.token)"
 export CODEX_BIN=codex
 export BRIEFING_WORKER_RUNTIME="$PWD/runtime/worker"
@@ -115,6 +121,8 @@ python -m briefing.worker
 默认间隔为 120 秒，可通过 --interval 调整；--timeout 控制生成时限。程序允许范围以 --help 为准。没有收到来源邮件时，启动 worker 不会凭空生成简报。
 
 ## 7. 配置千问工具与朗读 Skill
+
+本节的字段供手工配置参考。账号登录、真实插件标识、设备绑定、开发者模式和私有发布的完整步骤见 [首次安装的千问接入部分](setup.md)。本项目采用 HTTP 云云对接，无需安装手机 APP SDK。
 
 在自己的千问开发者项目中创建 HTTP 读取工具：
 

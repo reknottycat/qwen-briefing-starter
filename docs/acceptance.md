@@ -10,11 +10,16 @@
 python -m pytest
 node --test tests/test_collector.cjs
 python scripts/verify_live.py --help
+python -m briefing.onboarding --help
 ~~~
 
 [CI 工作流](../.github/workflows/ci.yml) 使用 Python 3.11 和 Node.js 22 执行同类检查。发布时检查对应提交的真实 CI 结果，不将“工作流文件存在”记作通过。
 
 测试覆盖 API 权限、输入校验、去重、任务租约、偏好并发、视图隔离、原文保留、模型输出校验、邮件 MIME 解析及验收脚本本身。合成测试不读取真实 Gmail，不验证部署域名、真实 Codex 服务、千问平台或眼镜声音。
+
+首次配置还应使用合成清单核对：监控/非每日/暂停任务被排除；未知目的不能直接选入；未确认任务不能确认服务器；两份确认缺一不能导出；修改方案会使对应 digest 失效；导出保留原任务且不包含秘密。命令记录确认并不证明人类已经回复，Agent 行为需按真实对话另核对。
+
+Docker 与 Pi 的独立合成验收见 [容器说明](../deploy/docker/README.md)。执行 scripts/verify_docker.py 需要真实 Docker 环境和所列依赖；其模型替身不使用真实付费供应商。报告实际结果与覆盖环境，不把脚本存在、镜像可构建或替身响应成功写成云模型/设备验收。
 
 ## 2. 部署后的 HTTP 验收
 

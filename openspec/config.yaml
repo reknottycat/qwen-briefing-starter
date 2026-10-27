@@ -1,5 +1,5 @@
 schema: spec-driven
 context: |
-  Self-hosted cached briefing starter. Reuse FastAPI, Codex CLI, Gmail Apps Script,
+  Self-hosted cached briefing starter. Reuse FastAPI, Codex or Pi CLI, Gmail Apps Script,
   and Qwen HTTP/Speak. Keep credentials, emails, generated briefings, and runtime
   receipts outside Git. Acceptance and known limits are maintained in docs/.

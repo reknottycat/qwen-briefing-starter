@@ -1,0 +1,12 @@
+**
+!Dockerfile
+!pyproject.toml
+!README.md
+!LICENSE
+!briefing/
+!briefing/**
+!deploy/
+!deploy/docker/
+!deploy/docker/entrypoint.py
+briefing/**/__pycache__/
+briefing/**/*.pyc
