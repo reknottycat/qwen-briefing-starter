@@ -1,4 +1,5 @@
 """Portable configuration checks use temporary files and never open a network client."""
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -71,6 +72,86 @@ def test_invalid_existing_credentials_are_not_overwritten(tmp_path):
     assert result.returncode == 2
     assert 'too-short' not in result.stdout + result.stderr
     assert [path.name for path in tmp_path.iterdir()] == ['ingest.token']
+
+
+def custom_sources(tmp_path):
+    policy = tmp_path / 'source-policy.json'
+    policy.write_text(json.dumps({'version': 1, 'sources': [{'name': '每日科学小课', 'kind': 'daily',
+        'event_type': '定时结果', 'narration_detail': 'detailed'}]}, ensure_ascii=False), encoding='utf-8')
+    preferences = tmp_path / 'initial-preferences.json'
+    preferences.write_text(json.dumps({'revision': 1, 'format': 'mixed', 'work_enabled': False, 'sources': {
+        '每日科学小课': {'category': 'learning', 'mode': 'processed', 'narration_detail': 'detailed', 'note': ''}}},
+        ensure_ascii=False), encoding='utf-8')
+    return policy, preferences
+
+
+@pytest.mark.parametrize('backend', ['codex', 'pi'])
+def test_configuration_connects_confirmed_sources_and_selected_generator(tmp_path, backend):
+    policy, preferences = custom_sources(tmp_path)
+    key_file = tmp_path / 'provider.key'
+    key_file.write_text('synthetic-provider-key-do-not-log')
+    output = tmp_path / 'credentials'
+    args = ['--generator', backend, '--source-policy', str(policy), '--initial-preferences', str(preferences)]
+    if backend == 'pi':
+        args += ['--pi-provider', 'example-provider', '--pi-model', 'example-model', '--pi-bin', '/opt/pi/bin/pi',
+                 '--pi-api-key-file', str(key_file), '--pi-base-url', 'https://api.example.com/v1']
+    result = generate(output, '--base-url', 'https://briefing.example.com/briefing/v1', *args)
+    assert result.returncode == 0, result.stderr
+    api_env = (output / 'api.env').read_text(encoding='utf-8')
+    worker_env = (output / 'worker.env').read_text(encoding='utf-8')
+    policy_value = str(policy.resolve()).replace('\\', '\\\\')
+    preferences_value = str(preferences.resolve()).replace('\\', '\\\\')
+    assert f'BRIEFING_SOURCE_POLICY_PATH="{policy_value}"' in api_env
+    assert f'BRIEFING_SOURCE_POLICY_PATH="{policy_value}"' in worker_env
+    assert f'BRIEFING_INITIAL_PREFERENCES_PATH="{preferences_value}"' in api_env
+    assert 'BRIEFING_INITIAL_PREFERENCES_PATH' not in worker_env
+    assert f'BRIEFING_GENERATOR="{backend}"' in worker_env
+    if backend == 'pi':
+        assert 'PI_PROVIDER="example-provider"' in worker_env
+        assert 'PI_MODEL="example-model"' in worker_env
+        assert 'PI_BIN="/opt/pi/bin/pi"' in worker_env
+        assert 'PI_BASE_URL="https://api.example.com/v1"' in worker_env
+        assert 'PI_API_KEY_FILE=' in worker_env
+    assert 'synthetic-provider-key-do-not-log' not in api_env + worker_env + result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('missing', ['--pi-provider', '--pi-model', '--pi-api-key-file'])
+def test_pi_missing_configuration_fails_before_writing_any_credentials(tmp_path, missing):
+    key = tmp_path / 'provider.key'
+    key.write_text('synthetic-key')
+    pairs = {'--pi-provider': 'example', '--pi-model': 'example-model', '--pi-api-key-file': str(key)}
+    args = [part for option, value in pairs.items() if option != missing for part in (option, value)]
+    output = tmp_path / 'credentials'
+    result = generate(output, '--base-url', 'https://briefing.example.com/briefing/v1', '--generator', 'pi', *args)
+    assert result.returncode == 2
+    assert not output.exists()
+
+
+def test_custom_preferences_require_policy_and_reject_mismatched_sources_before_write(tmp_path):
+    policy, preferences = custom_sources(tmp_path)
+    output = tmp_path / 'credentials'
+    result = generate(output, '--base-url', 'https://briefing.example.com/briefing/v1',
+                      '--initial-preferences', str(preferences))
+    assert result.returncode == 2
+    assert not output.exists()
+    data = json.loads(preferences.read_text(encoding='utf-8'))
+    data['sources']['另一来源'] = data['sources'].pop('每日科学小课')
+    preferences.write_text(json.dumps(data), encoding='utf-8')
+    result = generate(output, '--base-url', 'https://briefing.example.com/briefing/v1',
+                      '--source-policy', str(policy), '--initial-preferences', str(preferences))
+    assert result.returncode == 2
+    assert not output.exists()
+
+
+def test_invalid_pi_endpoint_and_missing_key_path_preserve_prior_configuration(tmp_path):
+    output = tmp_path / 'credentials'
+    assert generate(output, '--base-url', 'https://briefing.example.com/briefing/v1').returncode == 0
+    before = {path.name: path.read_bytes() for path in output.iterdir()}
+    result = generate(output, '--base-url', 'https://briefing.example.com/briefing/v1', '--generator', 'pi',
+                      '--pi-provider', 'example', '--pi-model', 'example-model',
+                      '--pi-api-key-file', str(tmp_path / 'missing.key'), '--pi-base-url', 'https://user:secret@example.com/v1')
+    assert result.returncode == 2
+    assert {path.name: path.read_bytes() for path in output.iterdir()} == before
 
 
 def test_worker_requires_endpoint_before_opening_a_client(monkeypatch):

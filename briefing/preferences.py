@@ -1,9 +1,12 @@
 """Validated cloud narration preferences; source identity stays in the policy."""
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from .source_policy import SOURCE_POLICY, SOURCE_RULES
 
@@ -32,8 +35,9 @@ class PreferencesSnapshot(BaseModel):
 
     @field_validator("sources")
     @classmethod
-    def all_canonical_sources(cls, value):
-        if set(value) != set(SOURCE_RULES):
+    def all_canonical_sources(cls, value, info: ValidationInfo):
+        expected = (info.context or {}).get("source_names", set(SOURCE_RULES))
+        if set(value) != set(expected):
             raise ValueError("preferences_sources_mismatch")
         return value
 
@@ -66,5 +70,28 @@ def default_preferences() -> dict:
     }}
 
 
-def validate_preferences_snapshot(raw) -> dict:
-    return PreferencesSnapshot.model_validate(raw).model_dump(mode="json")
+def validate_preferences_snapshot(raw, *, source_names=None) -> dict:
+    context = {"source_names": source_names} if source_names is not None else None
+    return PreferencesSnapshot.model_validate(raw, context=context).model_dump(mode="json")
+
+
+def initial_preferences() -> dict:
+    """Read a deployment seed only when the store has no saved preferences."""
+    configured = os.environ.get("BRIEFING_INITIAL_PREFERENCES_PATH")
+    if not configured:
+        return default_preferences()
+    return load_initial_preferences(Path(configured))
+
+
+def load_initial_preferences(path: Path, *, source_names=None) -> dict:
+    """Validate a setup seed before writing credentials or initializing state."""
+    try:
+        if path.stat().st_size > 1_000_000:
+            raise ValueError("oversized_seed")
+        preferences = validate_preferences_snapshot(json.loads(path.read_text(encoding="utf-8")), source_names=source_names)
+        if preferences["revision"] != 1:
+            raise ValueError("initial_revision_must_be_one")
+        return preferences
+    except (OSError, ValueError, TypeError):
+        # Never echo the rejected private preference text in startup diagnostics.
+        raise RuntimeError("invalid_initial_preferences") from None

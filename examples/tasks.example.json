@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "daily-news-example",
+      "name": "我的每日新闻",
+      "cadence": "daily",
+      "enabled": true,
+      "monitoring": false,
+      "evidence": "每天生成完整资讯摘要，不是有变化才通知的监控任务。"
+    },
+    {
+      "id": "daily-learning-example",
+      "name": "每日科学小课",
+      "cadence": "daily",
+      "enabled": true,
+      "monitoring": false,
+      "evidence": "每天提供课程内容和练习，不依赖告警或事件触发。"
+    },
+    {
+      "id": "price-alert-example",
+      "name": "价格变化提醒",
+      "cadence": "daily",
+      "enabled": true,
+      "monitoring": true,
+      "evidence": "只有超过变化阈值才通知，属于监控任务。"
+    }
+  ]
+}

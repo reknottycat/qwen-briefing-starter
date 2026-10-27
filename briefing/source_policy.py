@@ -1,12 +1,15 @@
 """The JSON file is the canonical source, event, order and narration policy."""
 import json
+import os
 from pathlib import Path
 
 NARRATION_DETAILS = ("simple", "standard", "detailed")
 
 
 def load_source_policy(path: Path | None = None) -> dict:
-    path = path or Path(__file__).with_name("source_policy.json")
+    if path is None:
+        configured = os.environ.get("BRIEFING_SOURCE_POLICY_PATH")
+        path = Path(configured) if configured else Path(__file__).with_name("source_policy.json")
     policy = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(policy, dict) or set(policy) != {"version", "sources"} or type(policy["version"]) is not int or policy["version"] != 1:
         raise ValueError("unsupported_source_policy")

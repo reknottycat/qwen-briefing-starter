@@ -16,7 +16,7 @@ import tempfile
 from threading import RLock
 
 from .models import Edition, Failure, Ingest, ReadRequest, Rebuild, subject_date, subject_task
-from .preferences import UpdatePreferences, default_preferences, validate_preferences_snapshot
+from .preferences import UpdatePreferences, initial_preferences, validate_preferences_snapshot
 from .source_policy import SOURCE_ORDER, SOURCE_POLICY
 from .views import select_view
 
@@ -47,8 +47,16 @@ class Store:
         if self.state.get("version") != 1:
             raise RuntimeError("unsupported_state_version")
         if "preferences" not in self.state:
+            if self.path.exists() and os.environ.get("BRIEFING_INITIAL_PREFERENCES_PATH"):
+                raise RuntimeError("initial_preferences_require_new_state")
+            # Legacy default migration must not mix old messages with a new policy.
+            try:
+                for message in self.state["messages"].values():
+                    subject_task(message["subject"])
+            except (ValueError, KeyError, TypeError, AttributeError):
+                raise RuntimeError("state_sources_require_explicit_migration") from None
             state = deepcopy(self.state)
-            state["preferences"] = default_preferences()
+            state["preferences"] = initial_preferences()
             self._commit(state)
         else:
             validate_preferences_snapshot(self.state["preferences"])
