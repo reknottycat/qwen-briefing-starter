@@ -10,4 +10,4 @@
 ## 3. Verify
 - [x] 3.1 Run Python and collector suites, build wheel/source archive, and verify isolated installation.
 - [x] 3.2 Review final source and archives for private content and unsafe configuration defaults.
-- [ ] 3.3 Verify CI for the pushed release candidate and archive this change.
+- [x] 3.3 Verify CI for the pushed release candidate and archive this change.
