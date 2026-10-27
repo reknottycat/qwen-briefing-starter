@@ -12,10 +12,10 @@
 - [x] 2.2 Add Docker API/worker configuration and an independent synthetic smoke check.
 - [x] 2.3 Connect configuration generation, package contents and CI to the supported deployment paths.
 - [x] 2.4 Add authenticated Pi provider/model/API-key settings and compatible third-party endpoints to the existing web page, preserving secret and authorization boundaries.
-- [ ] 2.5 Start Docker without a model key, load saved settings in the worker and verify web-configured generation and persistence with the real Pi CLI.
+- [x] 2.5 Start Docker without a model key, load saved settings in the worker and verify web-configured generation and persistence with the real Pi CLI.
 
 ## 3. Verification and release
 
-- [ ] 3.1 Run full Python and collector tests, installed-wheel checks, container CI and independent change review.
-- [ ] 3.2 Publish the verified source and release update with precise validation limits.
-- [ ] 3.3 Sync specifications and archive the completed change after evidence is checked.
+- [x] 3.1 Run full Python and collector tests, installed-wheel checks, container CI and independent change review.
+- [x] 3.2 Publish the verified source and release update with precise validation limits.
+- [x] 3.3 Sync specifications and archive the completed change after evidence is checked.
