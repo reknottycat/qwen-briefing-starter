@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>早报设置 · 按你的节奏</title>
+    <link rel="stylesheet" href="/briefing/v1/manage/styles.css">
+    <script src="/briefing/v1/manage/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="/briefing/v1/manage/" aria-label="早报设置首页"><span class="brand-mark" aria-hidden="true">早</span><span>早报设置</span></a>
+        <button id="logout" class="text-button" type="button" hidden>退出设置</button>
+      </header>
+      <main id="main">
+        <div class="page-intro">
+          <p class="eyebrow"><span class="dialogue-mark" aria-hidden="true"></span>你的收听偏好</p>
+          <h1>早报，按你的节奏</h1>
+          <p class="intro-copy">听原文，还是听整理后的重点？为每个来源选好讲述方式，让想听的内容讲得刚刚好。</p>
+        </div>
+
+        <section id="lock-screen" class="lock-panel" aria-labelledby="lock-title">
+          <div class="lock-copy">
+            <p class="section-kicker">你的收听偏好</p>
+            <h2 id="lock-title">解锁早报设置</h2>
+            <p>输入管理口令，查看和调整每个来源的讲述方式。</p>
+            <p class="muted small">修改只影响播报稿，原始报告会完整保留。</p>
+          </div>
+          <form id="login-form" class="login-form">
+            <label for="management-token">管理口令</label>
+            <input id="management-token" type="password" autocomplete="off" required spellcheck="false" autocapitalize="none" aria-describedby="login-message">
+            <p id="login-message" class="form-message" role="status" aria-live="polite">正在检查登录状态…</p>
+            <button id="login-button" class="primary-button" type="submit" disabled>解锁设置</button>
+          </form>
+        </section>
+
+        <div id="settings-screen" hidden>
+          <div id="notice" class="notice" role="status" aria-live="polite" hidden>
+            <p id="notice-text"></p>
+            <button id="merge-latest" class="secondary-button" type="button" hidden>读取最新设置，保留我的修改</button>
+          </div>
+          <form id="preferences-form">
+            <section class="listening-options" aria-labelledby="listening-title">
+              <div><h2 id="listening-title">分开听，各有重点</h2><p class="small muted">“今日简报”带来资讯和简单学习概要；“今天应该学什么”收听学习正文。学习默认详细，可在下方调整。</p></div>
+              <div class="work-option"><label for="work-enabled"><input id="work-enabled" type="checkbox" role="switch" aria-describedby="work-help"><span>工作日程</span><span id="work-state" class="small muted">已关闭</span></label><p id="work-help" class="small muted">开启工作日程收听入口，内容来自归为工作日程的报告。</p></div>
+            </section>
+            <div class="settings-layout">
+              <section class="sources-panel" aria-labelledby="sources-title">
+                <div class="section-heading">
+                  <div><p class="section-kicker">收听内容</p><h2 id="sources-title" tabindex="-1">每个来源，怎么讲</h2></div>
+                  <p id="source-total" class="small muted"></p>
+                </div>
+                <p class="section-description">按现有顺序播报。选好讲述方式，整理后的内容还可以调整详略。</p>
+                <fieldset id="source-controls" class="source-controls"><legend class="sr-only">各来源的讲述详略与偏好</legend><div id="source-groups"></div></fieldset>
+              </section>
+
+              <aside class="sidebar" aria-label="早报状态与设置说明">
+                <section class="edition-panel" aria-labelledby="edition-title">
+                  <div class="edition-heading"><h2 id="edition-title">今天的早报</h2><span id="edition-date" class="small muted"></span></div>
+                  <p id="edition-state" class="edition-state" role="status" aria-live="polite">正在确认状态…</p>
+                  <p id="edition-description" class="small">正在读取今天的准备进度。</p>
+                  <dl class="edition-facts"><div><dt>已收到</dt><dd id="edition-sources">—</dd></div><div id="edition-time-row" hidden><dt>现稿更新</dt><dd id="edition-time">—</dd></div></dl>
+                  <p id="status-error" class="small status-note" role="status" aria-live="polite" hidden></p>
+                  <button id="refresh-status" class="text-button" type="button">刷新状态<span aria-hidden="true"> ↻</span></button>
+                </section>
+                <section class="detail-guide" aria-labelledby="detail-guide-title">
+                  <h2 id="detail-guide-title">整理后的内容，讲多细？</h2>
+                  <dl class="detail-levels"><div><dt>简单</dt><dd>一段讲完重点，最多 250 字。</dd></div><div><dt>一般</dt><dd>讲清核心信息，补上必要背景。</dd></div><div><dt>详细</dt><dd>展开原理、例子和练习，保留学习内容。</dd></div></dl>
+                  <div class="dialogue-note"><span>直接复述原文 <b>按收到的报告直接讲述，不应用详略和补充偏好。</b></span></div>
+                  <p class="small muted">修改只影响播报稿，来源报告和原有播放顺序保持不变。</p>
+                </section>
+              </aside>
+            </div>
+            <div class="save-bar">
+              <div><p id="save-summary" class="save-summary" role="status" aria-live="polite">设置已读取</p><p id="save-help" class="small muted">保存后，会用今天已收到的报告更新早报。</p></div>
+              <button id="save-button" class="primary-button" type="submit">保存并更新今天早报<span aria-hidden="true"> →</span></button>
+            </div>
+          </form>
+        </div>
+        <noscript><p class="notice">请启用浏览器 JavaScript 后重新打开本页，才能读取和保存早报设置。</p></noscript>
+      </main>
+      <footer class="page-footer">把时间留给值得听的内容。</footer>
+    </div>
+  </body>
+</html>

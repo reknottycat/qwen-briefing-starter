@@ -1,0 +1,4 @@
+interface:
+  display_name: "加入早报"
+  short_description: "管理早报来源、分类、朗读模式与有效偏好，保留原报告并核验生效"
+  default_prompt: "使用 $add-to-briefing 按我的要求管理早报来源、分类、模式、详略、短偏好或工作开关，并核验有效设置与生成状态。"

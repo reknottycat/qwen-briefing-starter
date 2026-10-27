@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated Python dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements-dev.txt
+      - name: Test API and worker
+        run: .venv/bin/python -m pytest -q
+      - name: Test Gmail collector
+        run: node --test tests/test_collector.cjs
+      - name: Check independent live acceptance entry point
+        run: .venv/bin/python scripts/verify_live.py --help
+      - name: Build wheel and source distribution
+        run: |
+          .venv/bin/python -m pip install build
+          .venv/bin/python -m build
+      - name: Verify clean wheel installation
+        run: |
+          python -m venv "$RUNNER_TEMP/qwen-install-check"
+          "$RUNNER_TEMP/qwen-install-check/bin/python" -m pip install dist/*.whl
+          "$RUNNER_TEMP/qwen-install-check/bin/python" -I scripts/verify_install.py
+      - name: Save distribution files
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwen-briefing-starter-dist
+          path: dist/*
+          if-no-files-found: error

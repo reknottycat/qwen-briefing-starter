@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "sources": [
+    {"name": "每日资讯", "kind": "daily", "event_type": "定时结果", "narration_detail": "standard"},
+    {"name": "市场观察", "kind": "daily", "event_type": "定时结果", "narration_detail": "standard"},
+    {"name": "每日知识练习", "kind": "daily", "event_type": "定时结果", "narration_detail": "detailed"},
+    {"name": "生活提示", "kind": "daily", "event_type": "定时结果", "narration_detail": "simple"},
+    {"name": "外语练习", "kind": "daily", "event_type": "定时结果", "narration_detail": "detailed"},
+    {"name": "技术周报", "kind": "weekly", "event_type": "定时结果", "narration_detail": "standard"},
+    {"name": "每周学习复盘", "kind": "weekly", "event_type": "定时结果", "narration_detail": "standard"},
+    {"name": "项目邮件回复", "kind": "conditional", "event_type": "新回复", "narration_detail": "standard"},
+    {"name": "客户邮件回复", "kind": "conditional", "event_type": "新回复", "narration_detail": "standard"},
+    {"name": "活动动态", "kind": "conditional", "event_type": "新信息", "narration_detail": "standard"}
+  ]
+}

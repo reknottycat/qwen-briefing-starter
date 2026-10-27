@@ -1,0 +1,27 @@
+[
+  {
+    "function": {
+      "name": "YOUR_PLUGIN_ID.get_daily_briefing",
+      "description": "读取预先备好的简报，每次请求均须调用。date 为 today、latest 或 YYYY-MM-DD；section 从 1 开始。默认整期朗读 ready 响应的 full_spoken_text，明确指定段号时只读 spoken_text；保留实际日期，不编造缺稿。",
+      "parameters": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "date": {
+            "description": "today表示今天，latest表示最新一期，或YYYY-MM-DD。未指定用today。",
+            "type": "string"
+          },
+          "topic": {
+            "description": "入口选择：__view_daily 为新闻和简单学习概要；__view_learning 为学习主稿；__view_work 为可选工作日程；__view_full 为全部详细内容。工作开关始终生效。普通中文关键词仅筛选每日简报。",
+            "type": "string"
+          },
+          "section": {
+            "description": "段落序号，从 1 开始。默认填 1 并完整读 full_spoken_text；仅在用户明确指定段号时读取对应 spoken_text。",
+            "type": "number"
+          }
+        }
+      }
+    },
+    "type": "function"
+  }
+]

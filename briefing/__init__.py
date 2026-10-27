@@ -1,0 +1,1 @@
+"""Private daily briefing bridge."""

@@ -1,0 +1,21 @@
+[Unit]
+Description=Private daily briefing Codex worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/daily-briefing
+EnvironmentFile=%h/.config/daily-briefing/worker.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=BRIEFING_WORKER_RUNTIME=%h/daily-briefing/runtime/worker
+ExecStart=%h/daily-briefing/.venv/bin/python -m briefing.worker
+Restart=on-failure
+RestartSec=30
+UMask=0077
+NoNewPrivileges=yes
+KillMode=control-group
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

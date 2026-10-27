@@ -1,0 +1,15 @@
+[Unit]
+Description=HTTPS entry for private daily briefing
+After=network-online.target briefing-api.service
+
+[Service]
+Type=forking
+PIDFile=/run/nginx-briefing.pid
+ExecStartPre=/usr/sbin/nginx -t -c /etc/qwen-daily-briefing/nginx.conf
+ExecStart=/usr/sbin/nginx -c /etc/qwen-daily-briefing/nginx.conf
+ExecReload=/usr/sbin/nginx -c /etc/qwen-daily-briefing/nginx.conf -s reload
+ExecStop=/bin/kill -s QUIT $MAINPID
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

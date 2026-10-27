@@ -1,0 +1,23 @@
+[Unit]
+Description=Private daily briefing API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=briefing
+Group=briefing
+WorkingDirectory=/opt/qwen-daily-briefing
+EnvironmentFile=/etc/qwen-daily-briefing/api.env
+ExecStart=/opt/qwen-daily-briefing/.venv/bin/uvicorn briefing.api:create_app --factory --host 127.0.0.1 --port 8786 --workers 1 --no-access-log
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# Keep this path equal to BRIEFING_DATA_DIR; create it and grant briefing ownership.
+ReadWritePaths=/var/lib/qwen-daily-briefing
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
