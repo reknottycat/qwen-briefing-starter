@@ -28,6 +28,10 @@ jobs:
         run: .venv/bin/python -m pytest -q
       - name: Test Gmail collector
         run: node --test tests/test_collector.cjs
+      - name: Test management page behavior
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ui-dom-check" --no-save --package-lock=false --ignore-scripts jsdom@26.1.0
+          NODE_PATH="$RUNNER_TEMP/ui-dom-check/node_modules" node --test tests/test_management_ui.cjs
       - name: Check independent live acceptance entry point
         run: .venv/bin/python scripts/verify_live.py --help
       - name: Build wheel and source distribution

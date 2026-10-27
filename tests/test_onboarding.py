@@ -238,6 +238,30 @@ def test_pi_requires_explicit_provider_and_model():
         onboarding.validate_server(config)
 
 
+def test_pi_docker_can_defer_model_credentials_to_authenticated_web_setup():
+    config = {**server(), "deployment": "docker"}
+    del config["provider"]
+    del config["model"]
+    del config["llm_base_url"]
+    assert onboarding.validate_server(config) == config
+
+
+def test_pi_linux_still_requires_model_configuration_before_deployment():
+    config = {**server(), "deployment": "linux"}
+    del config["provider"]
+    del config["model"]
+    with pytest.raises(onboarding.SetupError, match="pi_provider_and_model_required"):
+        onboarding.validate_server(config)
+
+
+def test_pi_docker_cannot_attach_an_endpoint_without_a_provider_and_model():
+    config = {**server(), "deployment": "docker", "llm_base_url": "https://models.example.com/v1"}
+    del config["provider"]
+    del config["model"]
+    with pytest.raises(onboarding.SetupError, match="pi_provider_and_model_required"):
+        onboarding.validate_server(config)
+
+
 @pytest.mark.parametrize("generator", ["opencode", "openai-compatible"])
 def test_agent_frontends_are_not_invented_server_generators(generator):
     with pytest.raises(onboarding.SetupError, match="invalid_server_choice"):
@@ -251,7 +275,8 @@ def test_unknown_credential_arguments_are_not_echoed(capsys):
     assert "do-not-echo-synthetic-secret" not in capsys.readouterr().err
 
 
-def test_cli_processes_complete_resumable_first_install(tmp_path):
+@pytest.mark.parametrize("defer_model", [False, True])
+def test_cli_processes_complete_resumable_first_install(tmp_path, defer_model):
     root = Path(__file__).resolve().parents[1]
     def run(*args):
         result = subprocess.run([sys.executable, "-m", "briefing.onboarding", *map(str, args)],
@@ -266,7 +291,11 @@ def test_cli_processes_complete_resumable_first_install(tmp_path):
     tasks_receipt = tmp_path / "confirmed-tasks.json"
     task_digest = run("status", "--plan", proposal)["task_digest"]
     run("confirm-tasks", "--plan", proposal, "--digest", task_digest, "--confirm", "--output", tasks_receipt)
-    config = write_json(tmp_path / "server.json", server())
+    server_choice = server()
+    if defer_model:
+        for field in ("provider", "model", "llm_base_url"):
+            del server_choice[field]
+    config = write_json(tmp_path / "server.json", server_choice)
     server_digest = run("status", "--plan", tasks_receipt, "--server", config)["server_digest"]
     server_receipt = tmp_path / "confirmed-server.json"
     run("confirm-server", "--plan", tasks_receipt, "--server", config, "--digest", server_digest,

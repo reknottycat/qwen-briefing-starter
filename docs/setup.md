@@ -119,7 +119,8 @@ python -m briefing.onboarding confirm-tasks --plan runtime/plan.json --digest "$
 | 生成方式 | 适合情况 | 模型配置的位置 |
 | --- | --- | --- |
 | Codex | 已有可工作的 Codex 登录或中转服务配置 | 生成主机上同一运行用户的 Codex 配置 |
-| Pi | 希望使用独立轻量 CLI 连接已选择的云端模型 | 生成主机的 provider/model、可选基础地址与私有 key 文件 |
+| Pi / Docker | 希望先启动，再通过网页选择模型服务 | 登录 HTTPS 设置页后选择内置目录或自定义兼容接口，并填写 API key |
+| Pi / Linux | 在已有 Linux 服务中手动配置 Pi | 生成主机的 provider/model、可选基础地址与私有 key 文件 |
 
 两种方式都由 worker 提前生成。OpenCode 可以帮助配置这两种方式，但本仓库不另设 OpenCode 服务器后端。
 
@@ -134,20 +135,18 @@ python -m briefing.onboarding confirm-tasks --plan runtime/plan.json --digest "$
 }
 ~~~
 
-Pi 示例：
+Pi/Docker 示例，可先只确认服务器，模型稍后在网页中设置：
 
 ~~~json
 {
   "deployment": "docker",
   "base_url": "https://briefing.example.com/briefing/v1",
   "ssh_alias": "briefing-host",
-  "generator": "pi",
-  "provider": "openai",
-  "model": "replace-with-your-approved-model"
+  "generator": "pi"
 }
 ~~~
 
-将域名、SSH 别名、provider 和 model 替换为确认过的实际值；模型名必须是所选服务真实支持的标识。自定义兼容服务可增加 llm_base_url，值为不含凭据、查询参数或片段的 HTTPS 基础地址。SSH 别名应已在用户本机配置，JSON 不接受 SSH 选项、密码或私钥。deployment 只接受 docker 或 linux，generator 只接受 codex 或 pi。
+将域名、SSH 别名替换为确认值。Pi/Docker 可以省略全部三项 provider、model、llm_base_url，表示先确认服务器、后在网页配置模型。若预先指定模型，provider 与 model 必须成对提供，llm_base_url 仅在自定义接口时填写；不能只给服务、模型或基础地址中的单项。Pi/Linux 仍要求 provider 与 model，密钥另存本地文件。基础地址须为不含凭据、查询参数或片段的 HTTPS URL。SSH 别名应已在用户本机配置，JSON 不接受 SSH 选项、密码或私钥。deployment 只接受 docker 或 linux；当前 Docker 模板只支持 Pi，Codex 使用 Linux 路线。
 
 当前 server.json 只保存上述字段。部署目录、凭据文件位置和额外的邮件交付约定写入另一份受保护的 runtime/deployment-notes.md；服务器确认时一并展示，恢复时一并核对。server_digest 不覆盖这些额外说明，不应声称它验证了全部部署细节。
 
@@ -178,7 +177,15 @@ export 不连接 SSH，不修改原任务，不部署服务器，也不验证设
 
 Docker 模板内置 Pi，按 [容器部署说明](../deploy/docker/README.md) 执行，使用上一步 runtime/config 下的文件；具体变量、秘密文件、容器用户和挂载路径以该文档为准。选择 Codex 时采用 [手动运行](quickstart.md) 与 [systemd 运维](operations.md)，复用生成主机现有认证和中转配置。当前 Docker 镜像不内置 Codex，不能仅把 JSON 的 generator 改为 codex 就在该镜像中运行。
 
-Pi 模式使用 PI_PROVIDER、PI_MODEL、PI_API_KEY_FILE；需要兼容中转地址时再设置 PI_BASE_URL。密钥文件内容为单行 API key，适配器使用独立的临时运行目录，不复制个人 Pi 的 OAuth 或聊天会话。Pi 与 Codex 的准确运行变量见 [生成器配置](operations.md)。
+Docker 无需先准备模型 API key 就能启动。先按容器说明启动 API/worker 并配置 HTTPS，打开 /briefing/v1/manage/，用本实例 manage.token 解锁，再配置 Pi 模型。没有保存模型配置时，worker 等待，不领取生成任务；这不影响管理页面和缓存服务启动。
+
+网页提供两条路径：选择随 Pi 版本提供的内置服务与模型目录；或者选择自定义 OpenAI Chat Completions 兼容接口，填写服务标识、HTTPS 基础地址、模型 ID 与 API key。目录是版本快照，不是对当前账号可用模型、额度或价格的查询，仍需使用自己实际开通的服务。网页只支持单个 key/token 的认证信息；OAuth 或需要额外凭据的服务不作通用兼容承诺。
+
+密钥由用户在已登录的 HTTPS 页面输入，不发到聊天。读取设置不会返回密钥，网页不把它写入浏览器持久存储或日志。保持相同服务和接口时，密钥留空可沿用已保存值；更换服务或接口必须输入新的密钥，避免把旧凭据送往新地址。
+
+保存后，下一次生成使用新配置，无需重启；它不会自动证明服务连接成功、模型质量合格，也不代表已有缓存已经重建。先核对保存反馈，再用授权的实际生成任务验证。Codex 继续使用原有工具配置，网页不会更改 Codex 认证或中转设置。
+
+Pi/Linux 手动模式仍使用 PI_PROVIDER、PI_MODEL、PI_API_KEY_FILE，可选 PI_BASE_URL；密钥是本机单行文件。Pi 适配器使用独立临时运行目录，不复制个人 OAuth 或聊天会话。两种配置方式的边界见 [运行维护](operations.md)。
 
 API 和 worker 都要加载同一份 BRIEFING_SOURCE_POLICY_PATH。BRIEFING_INITIAL_PREFERENCES_PATH 只用于首次创建状态；已经运行的实例不会被初始化文件改写。已有数据需要显式迁移和备份，不允许用新安装输出覆盖。
 
@@ -188,9 +195,9 @@ API 和 worker 都要加载同一份 BRIEFING_SOURCE_POLICY_PATH。BRIEFING_INIT
 python deploy/create-runtime-config.py --base-url https://briefing.example.com/briefing/v1 --generator codex --source-policy runtime/config/source-policy.json --initial-preferences runtime/config/initial-preferences.json
 ~~~
 
-上面命令创建/保留四角色 token，并生成 Linux/Codex 的 systemd 环境文件，同时绑定本次私有策略。Docker/Pi 只使用其 token 文件和导出 JSON，模型参数另填 Compose .env，不能直接使用这份 worker.env。若部署 Linux/Pi，在同一命令中将 --generator 改为 pi，并传 --pi-provider、--pi-model、--pi-api-key-file；可选 --pi-base-url、--pi-ca-file。确切示例见 [运行维护](operations.md)。
+上面命令创建/保留四角色 token，并生成 Linux/Codex 的 systemd 环境文件，同时绑定本次私有策略。Docker/Pi 只使用其 token 文件和导出 JSON，模型在网页登录后配置，不需要把模型 key 放进 Compose .env，也不能直接使用这份 worker.env。若部署 Linux/Pi，在同一命令中将 --generator 改为 pi，并传 --pi-provider、--pi-model、--pi-api-key-file；可选 --pi-base-url、--pi-ca-file。确切示例见 [运行维护](operations.md)。
 
-模型 key 是另一份秘密，不用四角色 token 替代。用户先在自己服务器上保存 key 文件，生成器仅验证文件并记录路径，不写入 key 值。命令应在实际部署主机和最终目录运行，因为配置文件中保存绝对路径；异机部署要分别核对路径与读取权限。不要把文件内容粘贴到聊天、源码或普通日志。
+模型 key 与四角色 token 相互独立。Linux/Pi 手动模式先在服务器保存 key 文件，生成器只验证并记录路径；Docker/Pi 由已认证的设置接口保存到私有持久目录。命令应在实际部署主机和最终目录运行，因为 Linux 配置文件记录绝对路径；异机部署要分别核对权限。不要把秘密内容粘贴到聊天、源码或普通日志。
 
 Gmail 采集器使用 [手动运行文档](quickstart.md) 中的 EXPECTED_ACCOUNT、BRIEFING_BASE_URL、BRIEFING_INGEST_TOKEN，并将 BRIEFING_SOURCE_POLICY 设置为本次导出的私有策略 JSON。配置前核对实际 Gmail 账号。
 

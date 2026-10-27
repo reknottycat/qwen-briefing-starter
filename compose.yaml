@@ -15,9 +15,11 @@ services:
       BRIEFING_READ_TOKEN_FILE: /run/secrets/read_token
       BRIEFING_MANAGE_TOKEN_FILE: /run/secrets/manage_token
       BRIEFING_TRUSTED_PROXY_IPS: ${BRIEFING_TRUSTED_PROXY_IPS:-127.0.0.1}
+      BRIEFING_PI_SETTINGS_DIR: /var/lib/briefing-pi-settings
     volumes:
       - ${BRIEFING_CONFIG_DIR:-./runtime/config}:/run/briefing/config:ro
       - ${BRIEFING_DATA_DIR:-./runtime/docker/data}:/var/lib/briefing
+      - ${BRIEFING_PI_SETTINGS_DIR:-./runtime/docker/pi-settings}:/var/lib/briefing-pi-settings
     secrets: [ingest_token, worker_token, read_token, manage_token]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8787/briefing/v1/health', timeout=2).status == 200"]
@@ -45,14 +47,12 @@ services:
       BRIEFING_WORKER_TOKEN_FILE: /run/secrets/worker_token
       BRIEFING_WORKER_RUNTIME: /var/lib/briefing-worker
       BRIEFING_SOURCE_POLICY_PATH: /run/briefing/config/source-policy.json
-      PI_PROVIDER: ${PI_PROVIDER:?Set the cloud model provider in .env}
-      PI_MODEL: ${PI_MODEL:?Set the cloud model name in .env}
-      PI_BASE_URL: ${PI_BASE_URL:-}
-      PI_API_KEY_FILE: /run/secrets/llm_api_key
+      BRIEFING_PI_SETTINGS_DIR: /var/lib/briefing-pi-settings
     volumes:
       - ${BRIEFING_CONFIG_DIR:-./runtime/config}:/run/briefing/config:ro
       - ${BRIEFING_WORKER_DIR:-./runtime/docker/worker}:/var/lib/briefing-worker
-    secrets: [worker_token, llm_api_key]
+      - ${BRIEFING_PI_SETTINGS_DIR:-./runtime/docker/pi-settings}:/var/lib/briefing-pi-settings:ro
+    secrets: [worker_token]
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
@@ -66,5 +66,3 @@ secrets:
     file: ${BRIEFING_CREDENTIALS_DIR:-./runtime/credentials}/read.token
   manage_token:
     file: ${BRIEFING_CREDENTIALS_DIR:-./runtime/credentials}/manage.token
-  llm_api_key:
-    file: ${BRIEFING_CREDENTIALS_DIR:-./runtime/credentials}/llm-api-key

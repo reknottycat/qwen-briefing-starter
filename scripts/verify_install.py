@@ -27,6 +27,12 @@ def main() -> None:
                            capture_output=True, text=True, timeout=10)
     assert setup.returncode == 0 and "confirm-tasks" in setup.stdout and "confirm-server" in setup.stdout
     checks.append("installed_setup_cli_available")
+    catalog = json.loads((module.parent / "pi_model_catalog.json").read_text(encoding="utf-8"))
+    provider_ids = {item["id"] for item in catalog["providers"]}
+    assert catalog["version"] == "1.4.0"
+    assert {"deepseek", "minimax", "minimax-cn", "moonshotai", "kimi-coding"} <= provider_ids
+    assert all(item["models"] for item in catalog["providers"])
+    checks.append("packaged_pi_model_catalog_loaded")
     with tempfile.TemporaryDirectory(prefix="briefing-install-") as directory:
         with TestClient(create_app(Path(directory), tokens), base_url="https://testserver") as client:
             assert client.get(PREFIX + "/health").json()["status"] == "ok"

@@ -23,3 +23,22 @@ Generation SHALL have bounded input, output and execution time. Source messages 
 #### Scenario: Raw-only edition
 - **WHEN** every selected source uses raw mode
 - **THEN** no model client is invoked and preserved text follows existing read-view behavior
+
+### Requirement: Private Pi web configuration
+An authorized operator SHALL configure Pi through the existing management page after Docker starts. Provider and model choices MUST be derived from the pinned Pi catalog, including API-key-based MiniMax, Moonshot/Kimi and DeepSeek choices when present. The page MUST also support explicit third-party compatible endpoints. The worker MUST use the saved configuration on subsequent generation without requiring a service restart.
+
+#### Scenario: First model setup
+- **WHEN** a fresh Docker installation has no model credentials
+- **THEN** management remains available, the worker waits without claiming jobs, and the operator can select a supported provider/model and save a key
+
+#### Scenario: Credential privacy
+- **WHEN** the operator saves or reads model configuration
+- **THEN** the key is held in restricted server-side storage, never returned in responses or logs, and not stored in browser local or session storage
+
+#### Scenario: Changing credential destination
+- **WHEN** the provider, endpoint or protocol changes
+- **THEN** the operator must supply a new key instead of silently sending the retained credential to a different destination
+
+#### Scenario: Concurrent edit and custom endpoint
+- **WHEN** an operator submits a stale revision or an invalid custom endpoint
+- **THEN** the request is rejected without overwriting the current configuration or echoing the submitted key

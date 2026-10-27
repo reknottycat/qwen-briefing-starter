@@ -1,11 +1,11 @@
-include LICENSE README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md requirements*.txt
+include LICENSE THIRD_PARTY_NOTICES README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md requirements*.txt
 include Dockerfile compose.yaml .dockerignore
 recursive-include briefing *.py *.json *.html *.js *.css
 recursive-include deploy *.py *.sh *.service *.conf
 recursive-include deploy/docker *.md *.example
 recursive-include examples *.json
 recursive-include cloud-gmail *.gs *.json
-recursive-include scripts *.py
+recursive-include scripts *.py *.mjs
 recursive-include qwen-skill *.md *.json
 recursive-include skills *.md *.yaml
 recursive-include docs *.md

@@ -245,7 +245,9 @@ def validate_server(value):
         if not isinstance(value["provider"], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", value["provider"]):
             fail("invalid_provider_identifier")
     if value["generator"] == "pi" and not {"provider", "model"} <= value.keys():
-        fail("pi_provider_and_model_required")
+        deferred_web_setup = value["deployment"] == "docker" and not ({"provider", "model", "llm_base_url"} & value.keys())
+        if not deferred_web_setup:
+            fail("pi_provider_and_model_required")
     return value
 
 

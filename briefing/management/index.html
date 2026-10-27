@@ -26,7 +26,7 @@
           <div class="lock-copy">
             <p class="section-kicker">你的收听偏好</p>
             <h2 id="lock-title">解锁早报设置</h2>
-            <p>输入管理口令，查看和调整每个来源的讲述方式。</p>
+            <p>输入管理口令，配置整理模型和每个来源的讲述方式。</p>
             <p class="muted small">修改只影响播报稿，原始报告会完整保留。</p>
           </div>
           <form id="login-form" class="login-form">
@@ -38,6 +38,45 @@
         </section>
 
         <div id="settings-screen" hidden>
+          <section id="model-panel" class="model-panel" aria-labelledby="model-title" aria-busy="true">
+            <div class="section-heading">
+              <div><p class="section-kicker">整理模型</p><h2 id="model-title">整理早报，用哪个模型</h2></div>
+              <p id="model-catalog-source" class="small muted"></p>
+            </div>
+            <p class="section-description">模型在服务器上整理收到的报告，眼镜直接读取准备好的内容。</p>
+            <p id="model-message" class="form-message" role="status" aria-live="polite" tabindex="-1">正在读取模型设置…</p>
+            <p id="model-unavailable" class="small muted" hidden>此部署未启用网页模型设置。使用 Codex 时，模型沿用服务器上的 Codex 配置；使用 Pi 时，请让维护者启用此入口。</p>
+            <button id="model-retry" class="text-button" type="button" hidden>重新读取模型设置</button>
+            <form id="model-form" autocomplete="off" hidden>
+              <fieldset id="model-controls" class="model-controls">
+                <legend class="sr-only">模型服务、模型和密钥</legend>
+                <fieldset class="mode-choices model-mode-choices">
+                  <legend class="sr-only">模型服务类型</legend>
+                  <label class="mode-option"><input id="model-mode-builtin" type="radio" name="model-mode" value="builtin" checked><span>内置服务</span></label>
+                  <label class="mode-option"><input id="model-mode-custom" type="radio" name="model-mode" value="custom"><span>第三方兼容接口</span></label>
+                </fieldset>
+                <div class="model-grid">
+                  <fieldset id="model-builtin-fields" class="model-fieldset model-wide">
+                    <legend class="sr-only">内置服务</legend>
+                    <div class="model-field"><label for="model-provider">模型服务</label><select id="model-provider" required aria-describedby="model-provider-help model-provider-notes"><option value="">请选择服务</option></select><p id="model-provider-help" class="small muted">服务与模型选项来自当前 Pi 目录。</p><p id="model-provider-notes" class="small status-note" hidden></p></div>
+                  </fieldset>
+                  <fieldset id="model-custom-fields" class="model-fieldset model-custom-grid model-wide" disabled hidden>
+                    <legend class="sr-only">第三方兼容接口</legend>
+                    <div class="model-field"><label for="model-custom-provider">服务标识</label><input id="model-custom-provider" type="text" maxlength="80" required spellcheck="false" autocapitalize="none" placeholder="例如：my-service" aria-describedby="model-custom-help"><p id="model-custom-help" class="small muted">自定一个标识，使用英文字母、数字、点、短横线或下划线。</p></div>
+                    <div class="model-field"><label for="model-api">接口协议</label><select id="model-api" required></select></div>
+                    <div class="model-field model-wide"><label for="model-base-url">HTTPS 接口地址</label><input id="model-base-url" type="url" maxlength="500" required spellcheck="false" autocapitalize="none" placeholder="https://api.example.com/v1" aria-describedby="model-url-help"><p id="model-url-help" class="small muted">填写服务商提供的兼容接口地址，通常以 /v1 结尾。密钥请填在下方。</p></div>
+                  </fieldset>
+                  <div class="model-field"><label for="model-id">模型</label><input id="model-id" type="text" list="model-options" maxlength="200" required spellcheck="false" autocapitalize="none" placeholder="输入或选择模型" aria-describedby="model-id-help"><datalist id="model-options"></datalist><p id="model-id-help" class="small muted">可以输入搜索，从所选服务的目录中选择模型。</p></div>
+                  <div class="model-field"><label id="model-key-label" for="model-api-key">API Key</label><input id="model-api-key" type="password" maxlength="16384" autocomplete="new-password" spellcheck="false" autocapitalize="none" aria-describedby="model-key-help model-provider-notes"><p id="model-key-help" class="small muted">填写所选服务的 API Key。保存后不会在页面回显。</p></div>
+                </div>
+              </fieldset>
+              <div class="model-actions">
+                <p id="model-summary" class="small muted" role="status" aria-live="polite">保存后用于下一次整理，不会立即调用模型。</p>
+                <button id="model-save" class="secondary-button" type="submit">保存模型设置</button>
+              </div>
+              <button id="model-merge-latest" class="text-button" type="button" hidden>读取最新配置，保留我的选项</button>
+            </form>
+          </section>
           <div id="notice" class="notice" role="status" aria-live="polite" hidden>
             <p id="notice-text"></p>
             <button id="merge-latest" class="secondary-button" type="button" hidden>读取最新设置，保留我的修改</button>

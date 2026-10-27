@@ -20,6 +20,7 @@ description: 管理已部署千问早报的来源、顺序、分类、朗读模�
 | 首次安装的分类与朗读初值 | `BRIEFING_INITIAL_PREFERENCES_PATH` 所指文件只用于新状态；已有状态绝不由它覆盖，有效值回读管理 API |
 | 实际生效的分类、模式、详略、短偏好、工作开关及版本 | 云端 `state.preferences`；通过 `GET /briefing/v1/manage/preferences` 读取，不以本地 JSON 默认值代替 |
 | 当日实际生成阶段与偏好版本 | `GET /briefing/v1/manage/status`；保存成功不等于新稿已经发布 |
+| Docker/Pi 的模型服务、模型及配置状态 | `GET /briefing/v1/manage/model-settings`；只返回非敏感设置，不含 key；目录查 `/manage/model-catalog`，不从朗读偏好推断 |
 | 管理契约与口播实现 | `briefing/preferences.py`、`briefing/api.py`、`briefing/store.py`、`briefing/worker.py`、`briefing/models.py` |
 | 邮件交付格式 | `docs/mail-format.md`、`cloud-gmail/Code.gs` |
 | 现行部署、重建、凭据位置 | `docs/operations.md` |
@@ -77,5 +78,7 @@ description: 管理已部署千问早报的来源、顺序、分类、朗读模�
 ## 修改后落实到运行
 
 执行变更时读取 [运行同步与验收](references/operations.md)，按“管理偏好”或“改变来源结构”选择流程。用户也可使用现行 HTTPS 地址下的 `/briefing/v1/manage/` 网页选择原文/整理后朗读、详略和短偏好；它与 Codex 使用同一云端有效设置，不是另一份登记。
+
+Docker/Pi 的模型服务和 API key 是同一网页中的独立设置，按 `docs/operations.md` 的模型配置流程办理，不写进来源策略或 preferences PUT。key 由用户直接在 HTTPS 表单填写，不进入聊天；改变提供方、基础地址、模式或协议时必须输入新 key。保存供下一次生成使用，无需重启，不代表已有缓存已重建或供应商已验证。Codex 继续复用现有 CLI 配置。
 
 完成时说明实际变更、保存的偏好版本、当日生成阶段及仍待触发或真机确认的部分。`no_sources` 表示偏好已保存但今日无原文，不能报告已有新稿；排队或生成中也不等于已发布。凭据、私密邮件、生成正文、偏好备注及完整回执保存在受保护且被忽略的 `runtime/`，不进入技能、Git或公开日志。

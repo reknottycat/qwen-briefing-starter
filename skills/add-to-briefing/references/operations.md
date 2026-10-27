@@ -9,6 +9,7 @@
 - 云端 `state.preferences` 保存有效设置；`briefing/preferences.py` 定义校验、初始分类、默认值和快照，`briefing/api.py` 定义管理认证和接口，`briefing/store.py` 管理版本与当日生成任务。以实际代码核对部署支持，旧文档不能覆盖新接口契约。`category` 不写入来源 JSON，`work_enabled` 初始为 false。
 - `briefing/worker.py` 使用领取任务附带的 preferences 快照。每来源包含 `mode`、`category`、`narration_detail`、`note`；顶层有 `work_enabled`，快照 `format` 为 `mixed`。新实例初值来自已确认的私有文件，缺少时才回退到默认 `processed`。`raw` 不用模型整理，`processed` 按详略和偏好整理，`podcast` 为备用双人文案；不生成音频。
 - `cloud-gmail/Code.gs` 仍用 `BRIEFING_SOURCE_POLICY` 收取入选来源的完整邮件，保持原触发器。普通偏好修改不改收件器、不改上游原任务、不重启服务。
+- Docker/Pi 网页模型设置独立于 `state.preferences`，由 `BRIEFING_PI_SETTINGS_DIR` 保存，API 可写、worker 只读。读取 `/manage/model-settings` 只能查看非敏感目标与配置状态，不能取得 key；未设置时 worker 等待且不领取任务。Linux/Pi 手工配置与 Codex CLI 路线以 `docs/operations.md` 为准。
 
 ## 管理已有来源的模式、详略与备注
 
@@ -25,6 +26,14 @@
 读取参数 `view` 支持 `daily` / `learning` / `work` / `full`，默认 `daily`；核对当前 `qwen-skill/SKILL.md`、worker 与 API 的实际部署。daily 使用新闻主稿和每来源最多 250 字符的独立学习概要；learning 主稿遵循保存的详略，不能为了“详细学习入口”擅自覆盖用户档位。raw 学习材料不进入模型，daily 只生成确定性的来源名称与收听提示，learning 返回原文；raw 新闻在 daily 照读原文。
 
 work 关闭时即时禁取工作入口，其他视图包括 full 也必须排除工作；开关不暂停原任务或邮件采集。启用后才能提供实际工作内容，无工作来源时不得虚构日程。分别验证每个入口的内容和版本，不从顶层 `ready` 或分类标签推断各入口已就绪；缺少缓存时如实说明，不让千问临时生成摘要。
+
+## 更换 Pi 模型或轮换模型 key
+
+这类请求使用现有 HTTPS 设置页的模型表单，不属于朗读偏好 PUT。先读取非敏感配置与版本，核对用户希望使用的服务和模型；内置目录来自随包 Pi 快照，自定义模式只用当前支持的 HTTPS OpenAI Chat Completions 兼容接口。不要用目录存在证明服务已开通或实际模型可用。
+
+key 由用户直接在已登录的网页填写，不复制进聊天、来源文件、公开记录或浏览器持久存储。目标不变时留空保留，只改模型可以沿用；切换模式、提供方、地址或协议必须提交新 key。模型设置有独立 revision，冲突时读取最新值、核对非秘密差异并重新输入需要的 key，不强制覆盖。
+
+保存供 worker 下一次生成使用，不需重启；正在进行的任务继续使用开始时取得的配置。保存不等于连接测试、任务排队或缓存已更新。按已有授权观察下一次任务，需要重建时仍用项目现有的明确日期重建流程，不能通过反复保存催进度。模型密钥文件及备份保持受限权限，回读时只报告非秘密设置与实际结果。
 
 ## 新增、移除来源或调整顺序
 

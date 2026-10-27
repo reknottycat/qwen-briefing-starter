@@ -11,6 +11,10 @@
   const pendingStates = new Set(["queued", "generating", "retry_wait"]);
   const $ = (id) => document.getElementById(id);
   const state = { authenticated: false, baseline: null, draft: [], workEnabled: false, saving: false, conflict: false, status: null, pollTimer: null, pollCount: 0, statusBusy: false, statusSerial: 0, epoch: 0, saved: false };
+  // API keys stay only in the password input until the save request. Never copy
+  // them into draft state, storage, rendered messages or returned settings.
+  const modelState = { baseline: null, catalog: null, draft: null, loading: false, saving: false, conflict: false, serial: 0, destination: "" };
+  const modelFieldNames = ["mode", "provider", "model", "base_url", "api"];
 
   class RequestError extends Error {
     constructor(status) { super("request_failed"); this.status = status; }
@@ -35,6 +39,217 @@
     if (className) node.className = className;
     if (content !== undefined) node.textContent = content;
     return node;
+  }
+
+  function modelFields(data) { return Object.fromEntries(modelFieldNames.map((name) => [name, data[name]])); }
+  function modelDestination(data) { return JSON.stringify([data.mode, data.provider, data.base_url.replace(/\/+$/, ""), data.api]); }
+
+  function validateModelSettings(data) {
+    if (!data || typeof data.enabled !== "boolean") throw new RequestError(502);
+    if (!data.enabled) return { enabled: false };
+    if (!Number.isInteger(data.revision) || data.revision < 0 || typeof data.configured !== "boolean" || typeof data.api_key_configured !== "boolean" || !["builtin", "custom"].includes(data.mode) || !modelFieldNames.every((key) => typeof data[key] === "string")) throw new RequestError(502);
+    return { enabled: true, revision: data.revision, configured: data.configured, api_key_configured: data.api_key_configured, ...modelFields(data) };
+  }
+
+  function validateModelCatalog(data) {
+    if (!data || !Array.isArray(data.providers) || !Array.isArray(data.custom_apis)) throw new RequestError(502);
+    const ids = new Set();
+    for (const provider of data.providers) {
+      if (!provider || typeof provider.id !== "string" || !provider.id || ids.has(provider.id) || typeof provider.name !== "string" || !Array.isArray(provider.models) || (provider.credential_label !== undefined && typeof provider.credential_label !== "string") || (provider.notes !== undefined && typeof provider.notes !== "string")) throw new RequestError(502);
+      ids.add(provider.id);
+      const models = new Set();
+      for (const model of provider.models) {
+        if (!model || typeof model.id !== "string" || !model.id || models.has(model.id) || typeof model.name !== "string") throw new RequestError(502);
+        models.add(model.id);
+      }
+    }
+    if (!data.custom_apis.every((api) => api && typeof api.id === "string" && api.id && typeof api.name === "string")) throw new RequestError(502);
+    return data;
+  }
+
+  function modelMessage(message, tone = "info") {
+    $("model-message").textContent = message;
+    $("model-message").dataset.tone = tone;
+  }
+
+  function hasModelEdits() {
+    return Boolean(modelState.baseline?.enabled && modelState.draft &&
+      (JSON.stringify(modelFields(modelState.baseline)) !== JSON.stringify(modelState.draft) || $("model-api-key").value));
+  }
+
+  function canRetainModelKey() {
+    return Boolean(modelState.baseline?.api_key_configured && modelState.draft &&
+      modelDestination(modelState.baseline) === modelDestination(modelState.draft));
+  }
+
+  function readModelFields() {
+    const custom = $("model-mode-custom").checked;
+    return { mode: custom ? "custom" : "builtin", provider: (custom ? $("model-custom-provider").value : $("model-provider").value).trim(),
+      model: $("model-id").value.trim(), base_url: custom ? $("model-base-url").value.trim().replace(/\/+$/, "") : "", api: custom ? $("model-api").value : "" };
+  }
+
+  function refreshModelOptions() {
+    const custom = $("model-mode-custom").checked;
+    const provider = custom ? null : modelState.catalog?.providers.find((item) => item.id === $("model-provider").value);
+    const credentialLabel = provider?.credential_label || "API Key";
+    $("model-key-label").textContent = credentialLabel.toLowerCase() === "api key" ? "API Key" : credentialLabel;
+    $("model-provider-notes").textContent = provider?.notes || "";
+    $("model-provider-notes").hidden = !provider?.notes;
+    $("model-builtin-fields").hidden = custom; $("model-builtin-fields").disabled = custom;
+    $("model-custom-fields").hidden = !custom; $("model-custom-fields").disabled = !custom;
+    $("model-options").replaceChildren();
+    if (custom) $("model-id").removeAttribute("list");
+    else {
+      $("model-id").setAttribute("list", "model-options");
+      for (const model of provider?.models || []) {
+        const option = element("option", "", model.name); option.value = model.id; $("model-options").append(option);
+      }
+    }
+    $("model-id-help").textContent = custom ? "填写该服务实际支持的模型 ID，与服务商文档保持一致。" : "可以输入搜索，从所选服务的目录中选择模型。";
+  }
+
+  function updateModelControls() {
+    const busy = modelState.loading || modelState.saving;
+    $("model-panel").setAttribute("aria-busy", String(busy));
+    $("model-form").setAttribute("aria-busy", String(busy));
+    $("model-controls").disabled = busy;
+    $("model-save").disabled = busy || modelState.conflict || !state.authenticated || !modelState.baseline?.enabled;
+    $("model-save").textContent = modelState.saving ? "正在保存模型…" : "保存模型设置";
+    $("model-merge-latest").hidden = !modelState.conflict;
+    $("model-merge-latest").disabled = busy;
+    $("model-retry").disabled = busy;
+    $("logout").disabled = state.saving || modelState.saving;
+    const retained = canRetainModelKey();
+    $("model-api-key").required = !retained;
+    const credentialLabel = $("model-key-label").textContent;
+    $("model-key-help").textContent = retained ? "已保存此服务的密钥。留空会保留；填写新值可替换，页面不会回显旧密钥。" : modelState.baseline?.api_key_configured ? `服务或接口已更换，请重新填写对应服务的 ${credentialLabel}。旧密钥不会用于新地址。` : `填写所选服务的 ${credentialLabel}。保存后不会在页面回显。`;
+    $("model-summary").dataset.dirty = String(hasModelEdits());
+    $("model-summary").textContent = modelState.saving ? "正在保存模型配置…" : hasModelEdits() ? "模型设置有未保存的修改。" : "保存后用于下一次整理，不会立即调用模型。";
+  }
+
+  function updateModelDraft({ resetModel = false } = {}) {
+    if (resetModel) $("model-id").value = "";
+    const draft = readModelFields();
+    const destination = modelDestination(draft);
+    if (modelState.destination && modelState.destination !== destination) $("model-api-key").value = "";
+    modelState.draft = draft; modelState.destination = destination;
+    refreshModelOptions(); updateModelControls();
+  }
+
+  function renderModelSettings(data, retained = null) {
+    modelState.baseline = validateModelSettings(data); modelState.conflict = false;
+    $("model-api-key").value = "";
+    $("model-unavailable").hidden = modelState.baseline.enabled;
+    $("model-form").hidden = !modelState.baseline.enabled;
+    if (!modelState.baseline.enabled) {
+      modelState.draft = null; modelState.destination = "";
+      $("model-catalog-source").textContent = "";
+      modelMessage("模型配置由当前部署方式管理。");
+      return;
+    }
+    modelState.draft = retained || modelFields(modelState.baseline);
+    const draft = modelState.draft;
+    $("model-provider").replaceChildren();
+    const placeholder = element("option", "", "请选择服务"); placeholder.value = ""; $("model-provider").append(placeholder);
+    for (const provider of modelState.catalog.providers) {
+      const option = element("option", "", provider.name === provider.id ? provider.name : `${provider.name} · ${provider.id}`);
+      option.value = provider.id; $("model-provider").append(option);
+    }
+    if (draft.mode === "builtin" && draft.provider && !modelState.catalog.providers.some((item) => item.id === draft.provider)) {
+      const missing = element("option", "", `${draft.provider}（当前目录未提供）`); missing.value = draft.provider; $("model-provider").append(missing);
+    }
+    $("model-api").replaceChildren();
+    for (const api of modelState.catalog.custom_apis) { const option = element("option", "", api.name); option.value = api.id; $("model-api").append(option); }
+    $("model-mode-builtin").checked = draft.mode === "builtin"; $("model-mode-custom").checked = draft.mode === "custom";
+    $("model-provider").value = draft.mode === "builtin" ? draft.provider : "";
+    $("model-custom-provider").value = draft.mode === "custom" ? draft.provider : "";
+    $("model-base-url").value = draft.base_url; $("model-id").value = draft.model;
+    $("model-api").value = draft.api || modelState.catalog.custom_apis[0]?.id || "";
+    $("model-catalog-source").textContent = "服务与模型来自 Pi 目录";
+    modelState.destination = modelDestination(draft);
+    refreshModelOptions();
+    modelMessage(retained ? "已读取最新配置，并保留你尚未保存的模型选项。请核对后再次保存。" : data.configured ? "当前模型配置已读取。" : "还没有配置整理模型。选择服务和模型，再填写 API Key。");
+  }
+
+  function clearModelPanel(preserveDraft) {
+    modelState.serial += 1; modelState.loading = false; modelState.saving = false;
+    $("model-api-key").value = ""; $("model-form").hidden = true;
+    $("model-provider").replaceChildren(); $("model-options").replaceChildren(); $("model-api").replaceChildren();
+    for (const id of ["model-custom-provider", "model-base-url", "model-id"]) $(id).value = "";
+    $("model-catalog-source").textContent = ""; $("model-unavailable").hidden = true; $("model-retry").hidden = true;
+    $("model-provider-notes").textContent = ""; $("model-provider-notes").hidden = true; $("model-key-label").textContent = "API Key";
+    if (!preserveDraft) { modelState.baseline = null; modelState.draft = null; modelState.catalog = null; modelState.conflict = false; modelState.destination = ""; }
+    modelMessage("解锁后读取模型设置。"); updateModelControls();
+  }
+
+  async function loadModelSettings({ preserveDraft = false } = {}) {
+    if (!state.authenticated) return;
+    const epoch = state.epoch; const serial = ++modelState.serial;
+    const retained = preserveDraft && hasModelEdits() ? { ...modelState.draft } : null;
+    modelState.loading = true; $("model-api-key").value = ""; $("model-retry").hidden = true;
+    modelMessage("正在读取模型设置…"); updateModelControls();
+    try {
+      const data = validateModelSettings(await request("/model-settings"));
+      let catalog = null;
+      if (data.enabled) catalog = validateModelCatalog(await request("/model-catalog"));
+      if (epoch !== state.epoch || serial !== modelState.serial || !state.authenticated) return;
+      modelState.catalog = catalog; renderModelSettings(data, retained);
+    } catch (error) {
+      if (epoch !== state.epoch || serial !== modelState.serial) return;
+      if (error.status === 401) showLock("登录已过期，请重新解锁。未保存的模型选项会保留，密钥请重新填写。");
+      else { modelMessage("暂时无法读取模型设置或服务目录。请稍后重试；收听偏好仍可使用。", "error"); $("model-retry").hidden = false; }
+    } finally { if (epoch === state.epoch && serial === modelState.serial) { modelState.loading = false; updateModelControls(); } }
+  }
+
+  function modelInputError() {
+    const draft = modelState.draft;
+    if (!draft || !draft.provider || !draft.model || draft.model.length > 200 || /\s/.test(draft.model)) return "请选择服务并填写准确的模型 ID。";
+    if (draft.mode === "builtin") {
+      const provider = modelState.catalog.providers.find((item) => item.id === draft.provider);
+      if (!provider?.models.some((model) => model.id === draft.model)) return "请选择当前服务目录中实际提供的模型。";
+    } else {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(draft.provider)) return "服务标识请使用英文字母、数字、点、短横线或下划线，并以字母或数字开头。";
+      let url;
+      try { url = new URL(draft.base_url); } catch { return "请填写完整的 HTTPS 接口地址。"; }
+      if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || /\s/.test(draft.base_url)) return "接口地址必须使用 HTTPS，不能含登录信息、密钥、查询参数或片段。";
+      if (!modelState.catalog.custom_apis.some((api) => api.id === draft.api)) return "请选择此部署支持的接口协议。";
+    }
+    const key = $("model-api-key").value.trim();
+    if (!key && !canRetainModelKey()) return `请填写这个服务的 ${$("model-key-label").textContent}。切换服务或接口后，需要重新填写对应的密钥。`;
+    if (key && (key.startsWith("!") || /\s/.test(key))) return "请检查服务密钥，不能含空白字符或以感叹号开头。";
+    return "";
+  }
+
+  async function saveModelSettings(event) {
+    event.preventDefault();
+    if (modelState.saving || modelState.loading || modelState.conflict || !state.authenticated || !modelState.baseline?.enabled) return;
+    modelState.draft = readModelFields();
+    const invalid = modelInputError();
+    if (invalid) { modelMessage(invalid, "error"); $("model-message").focus(); return; }
+    const epoch = state.epoch; const serial = ++modelState.serial;
+    const payload = { revision: modelState.baseline.revision, ...modelState.draft };
+    if ($("model-api-key").value.trim()) payload.api_key = $("model-api-key").value.trim();
+    modelState.saving = true; updateModelControls(); modelMessage("正在保存模型设置…");
+    let accepted = false;
+    try {
+      const result = await request("/model-settings", { method: "PUT", body: JSON.stringify(payload) });
+      if (epoch !== state.epoch || serial !== modelState.serial || !state.authenticated) return;
+      $("model-api-key").value = ""; accepted = true; renderModelSettings(result);
+      const confirmed = await request("/model-settings");
+      if (epoch !== state.epoch || serial !== modelState.serial || !state.authenticated) return;
+      renderModelSettings(confirmed);
+      modelMessage("模型设置已保存，将用于下一次整理。尚未验证服务连接或生成结果。");
+    } catch (error) {
+      if (epoch !== state.epoch || serial !== modelState.serial) return;
+      if (error.status === 401) showLock(accepted ? "模型设置已保存，登录已过期。请重新解锁查看当前配置。" : "登录已过期，请重新解锁。模型选项会保留，密钥请重新填写。");
+      else if (error.status === 409) {
+        $("model-api-key").value = ""; modelState.conflict = true;
+        modelMessage("模型配置已在其他页面更新，本次未保存。先读取最新配置并核对保留的选项；如需替换密钥，请重新填写。", "error");
+      } else modelMessage(accepted ? "模型设置已保存，但暂时无法回读最新配置。请稍后重新读取确认。" : error.status === 422 ? "保存未完成。请核对服务、模型、接口地址和 API Key。" : error.status === 403 ? "保存被拒绝。请从原始早报设置地址打开本页后重试。" : error.status === 503 ? "暂时无法保存模型设置，请联系维护者检查配置和存储目录权限。" : "保存尚未确认。请检查网络后重试；当前模型选项会保留。", "error");
+    } finally {
+      delete payload.api_key;
+      if (epoch === state.epoch && serial === modelState.serial) { modelState.saving = false; updateModelControls(); }
+    }
   }
 
   function validatePreferences(data) {
@@ -98,7 +313,7 @@
     $("source-controls").disabled = state.saving;
     $("work-enabled").disabled = state.saving;
     $("refresh-status").disabled = state.saving || state.statusBusy;
-    $("logout").disabled = state.saving;
+    $("logout").disabled = state.saving || modelState.saving;
     $("save-button").textContent = state.saving ? "正在保存…" : "保存并更新今天早报 →";
     $("preferences-form").setAttribute("aria-busy", String(state.saving));
   }
@@ -195,6 +410,7 @@
 
   function showLock(message = "输入管理口令后继续。", preserveDraft = true) {
     stopPolling(); state.epoch += 1; state.statusSerial += 1; state.authenticated = false; state.status = null; state.statusBusy = false;
+    clearModelPanel(preserveDraft);
     if (!preserveDraft) { state.baseline = null; state.draft = []; state.workEnabled = false; state.saved = false; state.conflict = false; }
     $("source-groups").replaceChildren(); $("source-total").textContent = "";
     $("work-enabled").checked = false; $("work-state").textContent = "已关闭";
@@ -285,7 +501,7 @@
     if (epoch !== state.epoch) return;
     acceptPreferences(data, preserveDraft); showSettings();
     if (focus) $("sources-title").focus();
-    await refreshStatus(true);
+    await Promise.all([refreshStatus(true), loadModelSettings({ preserveDraft: true })]);
   }
 
   $("login-form").addEventListener("submit", async (event) => {
@@ -349,7 +565,7 @@
   });
 
   $("logout").addEventListener("click", async () => {
-    $("logout").disabled = true; stopPolling();
+    $("model-api-key").value = ""; updateModelControls(); $("logout").disabled = true; stopPolling();
     try {
       await request("/session", { method: "DELETE", body: "{}" });
       showLock("已退出，重新输入管理口令即可查看设置。", false); $("management-token").focus();
@@ -360,10 +576,17 @@
   });
 
   $("refresh-status").addEventListener("click", () => refreshStatus(true));
+  $("model-form").addEventListener("submit", saveModelSettings);
+  for (const id of ["model-mode-builtin", "model-mode-custom", "model-provider"]) $(id).addEventListener("change", () => updateModelDraft({ resetModel: true }));
+  for (const id of ["model-custom-provider", "model-base-url", "model-id"]) $(id).addEventListener("input", () => updateModelDraft());
+  $("model-api").addEventListener("change", () => updateModelDraft());
+  $("model-api-key").addEventListener("input", updateModelControls);
+  $("model-merge-latest").addEventListener("click", () => loadModelSettings({ preserveDraft: true }));
+  $("model-retry").addEventListener("click", () => loadModelSettings({ preserveDraft: true }));
   $("work-enabled").addEventListener("change", () => { state.workEnabled = $("work-enabled").checked; updateWorkState(); updateSaveState(); });
   document.addEventListener("visibilitychange", () => { if (document.hidden) stopPolling(); else schedulePoll(); });
-  window.addEventListener("pagehide", stopPolling);
-  window.addEventListener("beforeunload", (event) => { if (hasEdits()) { event.preventDefault(); event.returnValue = ""; } });
+  window.addEventListener("pagehide", () => { stopPolling(); $("model-api-key").value = ""; });
+  window.addEventListener("beforeunload", (event) => { if (hasEdits() || hasModelEdits()) { event.preventDefault(); event.returnValue = ""; } });
   loadPreferences().catch((error) => {
     showLock(error.status === 401 ? "输入管理口令后继续。" : errorMessage(error, "读取设置"));
     if (error.status !== 401) $("login-message").dataset.tone = "error";

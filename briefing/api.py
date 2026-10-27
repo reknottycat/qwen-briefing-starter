@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .models import Edition, Failure, Ingest, ReadRequest, Rebuild
+from .model_settings import ModelSettingsError, ModelSettingsStore, UpdateModelSettings, configured_directory, model_catalog
 from .preferences import UpdatePreferences
 from .store import Conflict, Store
 
@@ -40,6 +41,7 @@ def create_app(data_dir: Path | None = None, tokens: dict | None = None, clock=N
     store = Store(directory, **({"clock": clock} if clock else {}))
     app = FastAPI(title="Private Daily Briefing", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store = store
+    pi_settings = ModelSettingsStore(configured_directory())
     sessions: dict[str, float] = {}
     session_lock = RLock()
     static_directory = Path(__file__).resolve().parent / "management"
@@ -95,6 +97,10 @@ def create_app(data_dir: Path | None = None, tokens: dict | None = None, clock=N
     @app.exception_handler(Conflict)
     async def conflict_error(request: Request, exc: Conflict):
         return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(ModelSettingsError)
+    async def model_settings_error(request: Request, exc: ModelSettingsError):
+        return JSONResponse(status_code=exc.status, content={"detail": exc.code})
 
     @app.middleware("http")
     async def private_headers(request: Request, call_next):
@@ -157,6 +163,18 @@ def create_app(data_dir: Path | None = None, tokens: dict | None = None, clock=N
     @app.get(MANAGE_PREFIX + "/status", dependencies=[Depends(require_manage)])
     def generation_status():
         return store.generation_status()
+
+    @app.get(MANAGE_PREFIX + "/model-catalog", dependencies=[Depends(require_manage)])
+    def get_model_catalog():
+        return model_catalog()
+
+    @app.get(MANAGE_PREFIX + "/model-settings", dependencies=[Depends(require_manage)])
+    def get_model_settings():
+        return pi_settings.public()
+
+    @app.put(MANAGE_PREFIX + "/model-settings", dependencies=[Depends(require_manage)])
+    def put_model_settings(payload: UpdateModelSettings):
+        return pi_settings.update(payload)
 
     @app.get(MANAGE_PREFIX)
     def management_redirect():

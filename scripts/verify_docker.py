@@ -43,18 +43,19 @@ def run(command, cwd, env, log, timeout=300):
     require(result.returncode == 0, "command_failed")
 
 
-def request(base, path, *, token=None, payload=None, extra_headers=None, response_headers=None):
+def request(base, path, *, token=None, payload=None, method=None, extra_headers=None, response_headers=None, parse_json=True):
     headers = {"Content-Type": "application/json", **(extra_headers or {})}
     if token:
         headers["Authorization"] = "Bearer " + token
     data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode()
     started = time.monotonic()
     try:
-        response = build_opener(ProxyHandler({})).open(Request(base + path, data=data, headers=headers), timeout=3)
+        response = build_opener(ProxyHandler({})).open(Request(base + path, data=data, headers=headers, method=method), timeout=3)
     except HTTPError as error:
         response = error
     with response:
-        body = json.loads(response.read(1_000_000))
+        raw = response.read(1_000_000)
+        body = json.loads(raw) if parse_json else raw.decode("utf-8")
         status = response.status
         if response_headers is not None:
             response_headers.update(response.headers.items())
@@ -96,13 +97,12 @@ def main(argv=None):
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
-        for name in ("config", "credentials", "data", "worker", "fixture", "receipt"):
+        for name in ("config", "credentials", "data", "worker", "pi-settings", "fixture", "receipt"):
             (directory / name).mkdir(mode=0o700)
         tokens = {role: secrets.token_urlsafe(32) for role in ("read", "worker", "ingest", "manage")}
         for role, value in tokens.items():
             (directory / "credentials" / (role + ".token")).write_text(value, encoding="utf-8")
         key = "synthetic-provider-key-" + secrets.token_hex(12)
-        (directory / "credentials" / "llm-api-key").write_text(key, encoding="utf-8")
         (directory / "fixture" / "key").write_text(key, encoding="utf-8")
         names = ("容器合成资讯", "容器合成学习")
         write_json(directory / "config" / "source-policy.json", {"version": 1, "sources": [
@@ -118,11 +118,11 @@ def main(argv=None):
         image = project + ":local"
         env.update({"BRIEFING_IMAGE": image, "BRIEFING_PORT": str(port),
                     "BRIEFING_UID": str(os.getuid()) if hasattr(os, "getuid") else "1000",
-                    "BRIEFING_GID": str(os.getgid()) if hasattr(os, "getgid") else "1000",
-                    "PI_PROVIDER": "smoke-provider", "PI_MODEL": "smoke-model", "PI_BASE_URL": "https://mock-llm:8443/v1"})
+                    "BRIEFING_GID": str(os.getgid()) if hasattr(os, "getgid") else "1000"})
         env.update({variable: (directory / child).as_posix() for variable, child in (
             ("BRIEFING_CONFIG_DIR", "config"), ("BRIEFING_CREDENTIALS_DIR", "credentials"),
-            ("BRIEFING_DATA_DIR", "data"), ("BRIEFING_WORKER_DIR", "worker"))})
+            ("BRIEFING_DATA_DIR", "data"), ("BRIEFING_WORKER_DIR", "worker"),
+            ("BRIEFING_PI_SETTINGS_DIR", "pi-settings"))})
         for secret in (directory / "credentials").iterdir():
             secret.chmod(0o600)
         override = {"services": {
@@ -179,6 +179,19 @@ def main(argv=None):
         require(request(base, "/manage/preferences", extra_headers={**authorized_headers, "Origin": "https://wrong.example"})[0] == 403,
                 "trusted_proxy_bypassed_origin_check")
         report["checks"].append("management_https_proxy_exact_peer_and_origin")
+        stage = "unconfigured_model_web_setup"
+        status, page = request(base, "/manage/", extra_headers=proxy_headers, parse_json=False)
+        require(status == 200 and 'id="model-panel"' in page and 'id="model-form"' in page,
+                "model_setup_page_unavailable")
+        require(request(base, "/manage/app.js", extra_headers=proxy_headers, parse_json=False)[0] == 200,
+                "model_setup_script_unavailable")
+        require(request(base, "/manage/model-settings", extra_headers=proxy_headers)[0] == 401, "model_settings_exposed_without_auth")
+        status, initial_model = request(base, "/manage/model-settings", extra_headers=authorized_headers)
+        require(status == 200 and initial_model.get("enabled") is True and initial_model.get("configured") is False
+                and initial_model.get("revision") == 0 and initial_model.get("api_key_configured") is False,
+                "fresh_model_setup_not_available")
+        status, catalog = request(base, "/manage/model-catalog", extra_headers=authorized_headers)
+        require(status == 200 and catalog.get("providers") and catalog.get("custom_apis"), "model_catalog_unavailable")
         stage = "authentication_and_ingestion"
         now = datetime.now(timezone.utc)
         day = now.astimezone(timezone(timedelta(hours=8))).date().isoformat()
@@ -190,6 +203,32 @@ def main(argv=None):
         status, ingested = request(base, "/ingest", token=tokens["ingest"], payload={"messages": messages})
         require(status == 200 and ingested.get("accepted") == 2, "custom_source_ingestion_failed")
         report["checks"].append("custom_sources_and_scoped_auth")
+        stage = "unconfigured_worker_keeps_jobs_unclaimed"
+        one_shot = subprocess.run(compose + ["exec", "-T", "worker", "python", "/usr/local/lib/briefing-entrypoint.py",
+                                             "python", "-m", "briefing.worker", "--once"],
+                                  cwd=root, env=env, capture_output=True, text=True, timeout=30)
+        require(one_shot.returncode == 1 and "model_not_configured" in one_shot.stdout + one_shot.stderr,
+                "unconfigured_worker_result_mismatch")
+        state = json.loads((directory / "data" / "state.json").read_text(encoding="utf-8"))
+        require(not state.get("jobs") and not state.get("editions") and len(state.get("messages", {})) == 2,
+                "unconfigured_worker_claimed_or_discarded_job")
+        require(not (directory / "receipt" / "request.json").exists(), "unconfigured_worker_called_model")
+        report["checks"].append("fresh_web_setup_and_unconfigured_worker_keeps_jobs")
+        stage = "save_model_through_authenticated_web_api"
+        model_payload = {"revision": 0, "mode": "custom", "provider": "smoke-provider", "model": "smoke-model",
+                         "base_url": "https://mock-llm:8443/v1", "api": "openai-completions", "api_key": key}
+        status, saved_model = request(base, "/manage/model-settings", method="PUT", payload=model_payload,
+                                      extra_headers=authorized_headers)
+        require(status == 200 and saved_model.get("configured") is True and saved_model.get("api_key_configured") is True
+                and saved_model.get("revision") == 1 and key not in json.dumps(saved_model), "model_save_failed_or_key_exposed")
+        status, readback_model = request(base, "/manage/model-settings", extra_headers=authorized_headers)
+        require(status == 200 and readback_model == saved_model and "api_key" not in readback_model,
+                "model_settings_readback_not_redacted")
+        saved_path = directory / "pi-settings" / "pi-model-settings.json"
+        require(saved_path.is_file(), "model_settings_not_persisted")
+        if os.name != "nt":
+            require(saved_path.stat().st_mode & 0o077 == 0, "model_settings_permissions_too_open")
+        report["checks"].append("authenticated_model_save_and_redacted_readback")
         stage = "pi_generation_and_cached_read"
         def ready():
             status, content = request(base, "/read?view=full&date=" + day, token=tokens["read"])
@@ -205,12 +244,23 @@ def main(argv=None):
         require(request(base, "/read?view=work", token=tokens["read"])[1]["status"] == "disabled", "work_default_not_disabled")
         report["checks"].append("daily_learning_summary_and_work_opt_in")
         stage = "persistence"
-        run(compose + ["restart", "api"], root, env, directory / "commands.log", 60)
+        run(compose + ["restart", "api", "worker"], root, env, directory / "commands.log", 60)
         persisted = wait_for(ready, 45)
         require(persisted["full_spoken_text"] == content["full_spoken_text"], "restart_lost_cached_content")
-        report["checks"].append("cached_content_survives_api_restart")
+        status, persisted_model = request(base, "/manage/model-settings", token=tokens["manage"], extra_headers=proxy_headers)
+        require(status == 200 and persisted_model == saved_model and key not in json.dumps(persisted_model),
+                "restart_lost_model_settings")
+        require(request(base, "/jobs/rebuild", token=tokens["worker"], payload={"date": day})[0] == 200, "rebuild_queue_failed")
+        def regenerated():
+            item = ready()
+            return item if item and item.get("generated_at") != content.get("generated_at") else None
+        regenerated_content = wait_for(regenerated, 90)
+        require(regenerated_content["full_spoken_text"] == content["full_spoken_text"]
+                and json.loads((directory / "receipt" / "request.json").read_text())["requests"] >= 2,
+                "worker_did_not_reload_persisted_model_settings")
+        report["checks"].append("cached_content_and_model_settings_survive_api_worker_restart")
         report["status"] = "passed"
-    except (SmokeFailure, KeyError, OSError, ValueError) as error:
+    except (SmokeFailure, KeyError, OSError, ValueError, subprocess.TimeoutExpired) as error:
         report["stage"] = stage
         report["reason"] = str(error) if isinstance(error, SmokeFailure) else "unexpected_contract_or_environment_error"
     finally:

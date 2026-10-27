@@ -10,13 +10,13 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml README.md LICENSE THIRD_PARTY_NOTICES ./
 COPY briefing ./briefing
 RUN python -m pip install --no-cache-dir . \
     && groupadd --gid 1000 briefing \
     && useradd --uid 1000 --gid 1000 --create-home briefing \
-    && mkdir -p /var/lib/briefing /var/lib/briefing-worker \
-    && chown briefing:briefing /var/lib/briefing /var/lib/briefing-worker
+    && mkdir -p /var/lib/briefing /var/lib/briefing-worker /var/lib/briefing-pi-settings \
+    && chown briefing:briefing /var/lib/briefing /var/lib/briefing-worker /var/lib/briefing-pi-settings
 COPY deploy/docker/entrypoint.py /usr/local/lib/briefing-entrypoint.py
 
 USER 1000:1000

@@ -18,6 +18,9 @@ The API, state store, Gmail collector, cache views and output validation already
 - Discovery reads supplied Codex automation files or a normalized export from the user's existing scheduler. Unknown monitoring classification requires review; there is no assumption that every Agent has a scheduled-task connector.
 - One Docker image runs API and worker as separate services. Use the official Pi package, read-only configuration and scoped credential mounts, persistent API storage and loopback host exposure behind existing TLS.
 - Qwen connection uses the official cloud HTTP plugin and native Speak. Users log into their own browser session; no SDK, password or Cookie is required by this integration.
+- Extend the existing settings page rather than redesign it. Pi web configuration uses the same management authentication, HTTPS and Origin checks. Store one active provider/model/key configuration atomically in a separate private directory shared read-write with API and read-only with the worker. Never include its key in API responses, ordinary state, logs or browser persistence. Each generation loads a snapshot, so saved changes apply to the next generation without restarting services.
+- Build the provider/model choices from the pinned Pi package, with its version and source recorded; do not invent a parallel catalog. Offer providers supported by the API-key adapter and explain unsupported authentication requirements. A separate custom endpoint form accepts explicitly selected Pi-supported HTTP protocols and model IDs. Changing a credential destination requires a fresh key; retaining an existing key is limited to the same provider/endpoint/protocol.
+- Docker starts with no model key. Its worker waits for model configuration before claiming generation jobs. Existing Linux/Codex behavior and explicit Pi environment/file configuration remain available. Saving a configuration is not a real provider or device test.
 
 ## Risks / Trade-offs
 

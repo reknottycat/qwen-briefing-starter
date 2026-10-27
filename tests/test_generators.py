@@ -47,6 +47,19 @@ def test_pi_command_is_noninteractive_tool_free_and_never_exposes_prompt_or_secr
     assert command[command.index("--mode") + 1] == "json"
 
 
+@pytest.mark.parametrize("provider,model,selector", [
+    ("openrouter", "openrouter/auto", "openrouter/openrouter/auto"),
+    ("openai", "openai/gpt-5.5", "openai/openai/gpt-5.5"),
+    ("synthetic", "synthetic-model", "synthetic/synthetic-model"),
+])
+def test_pi_model_selector_does_not_confuse_provider_prefix_with_exact_model_id(tmp_path, provider, model, selector):
+    # Pi resolves a provider prefix before exact IDs, even with --provider present.
+    # Prefix the selector explicitly so an ID which itself contains provider/ survives.
+    command = generators.pi_command("pi", provider, model, tmp_path)
+    assert command[command.index("--provider") + 1] == provider
+    assert command[command.index("--model") + 1] == selector
+
+
 def test_real_subprocess_receives_finite_stdin_isolated_config_and_returns_valid_draft(pi, monkeypatch, tmp_path):
     monkeypatch.setenv("BRIEFING_WORKER_TOKEN", "private-role-token")
     monkeypatch.setenv("OPENAI_API_KEY", "unrelated-account-key")

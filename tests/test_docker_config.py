@@ -1,9 +1,11 @@
 """Container startup reads only explicit role secrets, without exposing them."""
 import importlib.util
 import asyncio
+import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 
 import pytest
@@ -30,8 +32,31 @@ def test_file_secret_is_loaded_and_file_pointer_removed(tmp_path):
 
 
 def test_model_key_is_left_to_provider_adapter(tmp_path):
-    env = {"BRIEFING_LLM_API_KEY_FILE": str(tmp_path / "not-read-here")}
+    env = {"PI_API_KEY_FILE": str(tmp_path / "not-read-here")}
     assert module().load_role_secrets(env) == env
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="Docker Compose configuration parser is not installed")
+def test_fresh_compose_needs_no_model_secret_and_separates_settings_access():
+    root = ENTRYPOINT.parents[2]
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("BRIEFING_", "PI_", "COMPOSE_"))}
+    result = subprocess.run(["docker", "compose", "--env-file", "deploy/docker/env.example", "config", "--format", "json"],
+                            cwd=root, env=env, capture_output=True, text=True, encoding="utf-8", timeout=30)
+    assert result.returncode == 0, result.stderr
+    config = json.loads(result.stdout)
+    api, worker = config["services"]["api"], config["services"]["worker"]
+    settings_path = "/var/lib/briefing-pi-settings"
+    assert api["environment"]["BRIEFING_PI_SETTINGS_DIR"] == settings_path
+    assert worker["environment"]["BRIEFING_PI_SETTINGS_DIR"] == settings_path
+    api_mount = next(item for item in api["volumes"] if item["target"] == settings_path)
+    worker_mount = next(item for item in worker["volumes"] if item["target"] == settings_path)
+    assert api_mount["source"] == worker_mount["source"]
+    assert not api_mount.get("read_only", False) and worker_mount["read_only"] is True
+    assert api["user"] == worker["user"]
+    assert {item["source"] for item in api["secrets"]} == {"ingest_token", "worker_token", "read_token", "manage_token"}
+    assert {item["source"] for item in worker["secrets"]} == {"worker_token"}
+    assert not any(name in worker["environment"] for name in ("PI_PROVIDER", "PI_MODEL", "PI_API_KEY", "PI_API_KEY_FILE"))
+    assert set(config["secrets"]) == {"ingest_token", "worker_token", "read_token", "manage_token"}
 
 
 def test_trusted_proxy_configuration_accepts_only_exact_ipv4_and_ipv6():

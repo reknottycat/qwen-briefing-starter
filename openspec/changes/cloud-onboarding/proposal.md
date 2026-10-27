@@ -11,6 +11,7 @@ The public starter still assumes a preselected source list, an authenticated Cod
 - Load validated private source policy and initial preferences for a fresh installation.
 - Add a small Pi cloud-model worker adapter while retaining Codex and existing output validation. Configuration Skills remain usable from Codex or OpenCode.
 - Add a Docker API/worker deployment and an independent container smoke check.
+- Add authenticated Pi model settings to the existing management page, using Pi's packaged provider/model catalog plus explicitly configured compatible third-party endpoints. Operators enter their model API key after Docker deployment; keys remain server-side.
 - Document module boundaries, user-managed authentication, and the official Qwen HTTP plugin route.
 
 ## Capabilities

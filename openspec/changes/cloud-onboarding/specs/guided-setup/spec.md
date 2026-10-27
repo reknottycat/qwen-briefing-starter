@@ -36,8 +36,12 @@ The application SHALL accept validated operator source policy and initial prefer
 - **THEN** saved effective preferences remain unchanged
 
 ### Requirement: User managed platform login
-The setup Skill SHALL explain module boundaries and require users to configure SSH and model credentials locally and log into Qwen in their browser. It SHALL use the official HTTP plugin and Speak route without requiring a device SDK, and distinguish backend tests, tool calls, review status and device playback.
+The setup Skill SHALL explain module boundaries and require users to configure SSH locally and model keys in protected files or their authenticated HTTPS settings page. It SHALL use Qwen browser login, the official HTTP plugin and Speak without requiring a device SDK. Backend tests, tool calls, review status and device playback MUST remain distinct.
 
 #### Scenario: Qwen handoff
 - **WHEN** confirmed server preparation reaches device connection
 - **THEN** the instructions request the user's browser login and actual platform plugin/tool identifiers, not their password, cookies or an invented gateway credential
+
+#### Scenario: Deferred Docker model selection
+- **WHEN** the user confirms Docker deployment without choosing a model
+- **THEN** setup defers provider/model/key selection to the authenticated management page and requires successful generation and cached reads before Qwen handoff

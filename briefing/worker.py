@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+from functools import partial
 import json
 import logging
 import os
@@ -23,6 +24,7 @@ import httpx
 from pydantic import ValidationError
 
 from .generators import AdapterFailure, run_pi
+from .model_settings import ModelSettingsError, PiModelSettings, configured_directory, load_pi_settings
 from .models import MAX_SECTIONS, MAX_SECTION_CHARS, Draft, Edition, subject_task
 from .preferences import validate_preferences_snapshot
 from .source_policy import SOURCE_ORDER, SOURCE_RULES
@@ -292,24 +294,26 @@ def _run_with_model(job: dict, binary: str, runtime: Path, timeout: int, model_r
             "learning_summaries": generated["learning_summaries"] + summaries}
 
 
-def _run_pi_model(job: dict, binary: str, runtime: Path, timeout: int, max_sections: int) -> dict:
+def _run_pi_model(job: dict, binary: str, runtime: Path, timeout: int, max_sections: int,
+                  *, settings: PiModelSettings | None = None) -> dict:
     schema = Draft.model_json_schema()
     schema["properties"]["sections"]["maxItems"] = max_sections
     if "learning_summaries" not in schema["required"]:
         schema["required"].append("learning_summaries")
     try:
         return run_pi(build_prompt(job, max_sections=max_sections), schema,
-                      os.environ.get("PI_BIN") or "pi", runtime, timeout=timeout)
+                      os.environ.get("PI_BIN") or "pi", runtime, timeout=timeout, settings=settings)
     except AdapterFailure as error:
         raise GenerationFailure(error.code) from None
 
 
-def run_generator(job: dict, binary: str, runtime: Path, timeout: int = 600) -> dict:
+def run_generator(job: dict, binary: str, runtime: Path, timeout: int = 600,
+                  *, pi_settings: PiModelSettings | None = None) -> dict:
     generator = os.environ.get("BRIEFING_GENERATOR", "codex")
     if generator == "codex":
         return run_codex(job, binary, runtime, timeout)
     if generator == "pi":
-        return _run_with_model(job, binary, runtime, timeout, _run_pi_model)
+        return _run_with_model(job, binary, runtime, timeout, partial(_run_pi_model, settings=pi_settings))
     raise GenerationFailure("generation_failed")
 
 
@@ -401,6 +405,16 @@ def validate_draft(job: dict, draft: dict) -> Edition:
 
 
 def run_once(client: httpx.Client, binary: str, runtime: Path, timeout: int = 600, generator=None) -> str:
+    if generator is None and os.environ.get("BRIEFING_GENERATOR", "codex") == "pi" and configured_directory() is not None:
+        # Do not consume a job or attempt until an opted-in deployment has a model.
+        # Bind one immutable snapshot so a concurrent save affects the next job only.
+        try:
+            snapshot = load_pi_settings()
+        except ModelSettingsError as error:
+            return error.code
+        if snapshot is None:
+            return "model_not_configured"
+        generator = partial(run_generator, pi_settings=snapshot)
     generator = generator or run_generator
     response = client.get("jobs/next")
     response.raise_for_status()
